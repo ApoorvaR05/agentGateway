@@ -1,0 +1,30 @@
+{
+  "no_gateway": {
+    "detection_rate": 0.0,
+    "false_positive_rate": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "rule_only": {
+    "detection_rate": 0.345,
+    "false_positive_rate": 0.026,
+    "precision": 0.7263,
+    "recall": 0.345,
+    "f1": 0.4678
+  },
+  "sentinel_full": {
+    "detection_rate": 1.0,
+    "false_positive_rate": 0.994,
+    "precision": 0.1675,
+    "recall": 1.0,
+    "f1": 0.2869
+  },
+  "xgboost_only": {
+    "detection_rate": 1.0,
+    "false_positive_rate": 0.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  }
+}

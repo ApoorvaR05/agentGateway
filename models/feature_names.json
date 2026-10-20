@@ -1,0 +1,22 @@
+[
+  "tier3_ratio",
+  "tier2_ratio",
+  "seq_length",
+  "has_external_url",
+  "has_secret_keyword",
+  "has_shadow_access",
+  "has_admin_keyword",
+  "has_curl_external",
+  "has_injection_marker",
+  "has_wildcard_perm",
+  "has_public_firewall",
+  "has_unsafe_backup",
+  "max_consecutive_tier3",
+  "secret_then_shell",
+  "mean_drift_score",
+  "max_drift_score",
+  "mean_security_score",
+  "max_security_score",
+  "block_rate",
+  "warn_rate"
+]

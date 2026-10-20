@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+*.env
+
+# Model checkpoints (large binaries — regenerate with training scripts)
+models/*.pt
+models/*.zip
+
+# Logs
+*.log
+dashboard_server.log
+dashboard_server_err.log
+
+# Reports (generated at runtime)
+reports/cards/
+reports/audit/
+reports/session_report_*.html
+
+# Data (large generated file)
+data/training_data.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Bob / tooling temp
+.dist/
+.bob/

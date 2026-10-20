@@ -1,0 +1,19 @@
+{
+  "cv_f1_mean": 0.9392,
+  "cv_f1_std": 0.0154,
+  "cv_f1_scores": [
+    0.963,
+    0.9286,
+    0.9189,
+    0.9487,
+    0.9367
+  ],
+  "train_precision": 1.0,
+  "train_recall": 1.0,
+  "train_f1": 1.0,
+  "train_auc": 1.0,
+  "n_features": 20,
+  "n_estimators": 200,
+  "n_safe": 1000,
+  "n_adversarial": 200
+}

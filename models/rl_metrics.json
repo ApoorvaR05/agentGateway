@@ -1,0 +1,11 @@
+{
+  "avg_reward": 0.4006,
+  "avg_recall": 1.0,
+  "avg_fp_rate": 0.998,
+  "final_thresholds": {
+    "warn_t": 0.317,
+    "block_t": 0.758,
+    "drift_w": 0.307,
+    "drift_b": 0.602
+  }
+}

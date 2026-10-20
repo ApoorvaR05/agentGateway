@@ -1,0 +1,120 @@
+{
+  "n_clients": 5,
+  "n_rounds": 10,
+  "dp_enabled": true,
+  "dp_epsilon": 8.0,
+  "dp_delta": 1e-05,
+  "cumulative_epsilon": 79.9276,
+  "rounds": [
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 1,
+      "avg_loss": 0.711,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 7.9928
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 2,
+      "avg_loss": 0.8609,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 15.9855
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 3,
+      "avg_loss": 0.5579,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 23.9783
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 4,
+      "avg_loss": 0.5487,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 31.971
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 5,
+      "avg_loss": 0.5224,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 39.9638
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 6,
+      "avg_loss": 0.5168,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 47.9566
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 7,
+      "avg_loss": 0.5129,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 55.9493
+    },
+    {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "accuracy": 0.8333,
+      "round": 8,
+      "avg_loss": 0.495,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 63.9421
+    },
+    {
+      "f1": 0.4127,
+      "precision": 1.0,
+      "recall": 0.26,
+      "accuracy": 0.8767,
+      "round": 9,
+      "avg_loss": 0.4851,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 71.9348
+    },
+    {
+      "f1": 0.4252,
+      "precision": 1.0,
+      "recall": 0.27,
+      "accuracy": 0.8783,
+      "round": 10,
+      "avg_loss": 0.478,
+      "epsilon_round": 7.9928,
+      "epsilon_cumul": 79.9276
+    }
+  ],
+  "final": {
+    "f1": 0.4252,
+    "precision": 1.0,
+    "recall": 0.27,
+    "accuracy": 0.8783,
+    "round": 10,
+    "avg_loss": 0.478,
+    "epsilon_round": 7.9928,
+    "epsilon_cumul": 79.9276
+  }
+}
