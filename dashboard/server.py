@@ -21,8 +21,8 @@ from typing import Any
 # Ensure project root is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 import agent.sandbox as sb
@@ -32,7 +32,14 @@ from sentinel import event_bus
 from sentinel.interceptor import Interceptor
 from sentinel import report_card as rc_mod
 from sentinel import merkle_audit as merkle_mod
-from fastapi.responses import FileResponse
+
+# DB persistence (graceful fallback if unavailable)
+try:
+    from db import store as db_store
+    _DB_OK = True
+except Exception:
+    db_store = None  # type: ignore
+    _DB_OK = False
 
 # ── Patch sandbox to avoid real DB/network calls ──────────────────────────────
 sb.run_sql            = lambda q: [{"id": 1, "version": "0003_add_deployments"}]
@@ -78,6 +85,62 @@ def _sync_broadcast(data: dict) -> None:
 
 # ── Subscribe to event bus so every SENTINEL decision reaches the browser ─────
 event_bus.subscribe(_sync_broadcast)
+
+
+def _persist_event(event: dict) -> None:
+    """Persist SENTINEL decision events to DB (runs in subscriber thread)."""
+    if not _DB_OK:
+        return
+    etype = event.get("type")
+    # Persist decision events
+    if etype == "decision" or "decision" in event:
+        try:
+            db_store.save_decision(event)
+        except Exception:
+            pass
+        try:
+            db_store.append_audit(
+                event_id=str(event.get("event_id", "")),
+                task_id=event.get("task_id"),
+                action="decision",
+                details={
+                    "tool":     event.get("tool"),
+                    "decision": event.get("decision"),
+                    "reason":   event.get("reason", "")[:200],
+                    "seq":      event.get("seq"),
+                },
+            )
+        except Exception:
+            pass
+    # Persist session_start — create/update task record
+    elif etype == "session_start":
+        try:
+            sess = session_mod._current_session
+            if sess:
+                db_store.upsert_task(
+                    sess.task_id,
+                    event.get("task", sess.task),
+                    event.get("scenario", sess.scenario),
+                    status="running",
+                )
+        except Exception:
+            pass
+    # Persist session_end — finalize task record
+    elif etype == "session_end":
+        try:
+            summary = event.get("summary", {})
+            task_id = event.get("task_id") or summary.get("task_id")
+            if task_id:
+                db_store.update_task_status(
+                    task_id,
+                    summary.get("status", "completed"),
+                    summary=summary,
+                )
+        except Exception:
+            pass
+
+
+event_bus.subscribe(_persist_event)
 
 
 # ── REST endpoints ────────────────────────────────────────────────────────────
@@ -168,9 +231,9 @@ def get_knowledge_graph() -> JSONResponse:
     return JSONResponse({**kg.to_dict(), "active": True})
 
 
-@app.get("/api/audit")
+@app.get("/api/audit_merkle")
 def get_audit_trail() -> JSONResponse:
-    """Return the current session Merkle audit summary."""
+    """Return the current session Merkle audit summary (in-memory)."""
     trail = merkle_mod.get_trail()
     if trail is None:
         return JSONResponse({"active": False})
@@ -288,7 +351,179 @@ def get_status() -> JSONResponse:
         "llm_model":          cfg.OPENAI_MODEL if cfg.LLM_PROVIDER == "openai" else cfg.OLLAMA_MODEL,
         "llm_ready":          bool(cfg.OPENAI_API_KEY) or cfg.LLM_PROVIDER == "ollama",
         "active_session":     session_mod._current_session is not None,
+        "db_connected":       _DB_OK,
+        "risk_warn_threshold":  cfg.RISK_WARN_THRESHOLD,
+        "risk_block_threshold": cfg.RISK_BLOCK_THRESHOLD,
+        "drift_warn_threshold": cfg.DRIFT_WARN_THRESHOLD,
+        "drift_block_threshold":cfg.DRIFT_BLOCK_THRESHOLD,
     })
+
+
+# ============================================================
+# NEW API ENDPOINTS
+# ============================================================
+
+@app.get("/api/health")
+def get_health() -> JSONResponse:
+    """Return backend health: DB, gateway, LLM readiness."""
+    import config as cfg
+    db_ok = False
+    if _DB_OK:
+        try:
+            db_store.get_tasks(limit=1)
+            db_ok = True
+        except Exception:
+            pass
+    llm_ok = bool(cfg.OPENAI_API_KEY) or cfg.LLM_PROVIDER == "ollama"
+    return JSONResponse({
+        "backend":      True,
+        "gateway":      True,
+        "db":           db_ok,
+        "llm":          llm_ok,
+        "llm_provider": cfg.LLM_PROVIDER,
+        "llm_model":    cfg.OLLAMA_MODEL if cfg.LLM_PROVIDER == "ollama" else cfg.OPENAI_MODEL,
+        "timestamp":    time.time(),
+    })
+
+
+@app.get("/api/tasks")
+def list_tasks(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
+    """List the last N tasks from DB."""
+    if not _DB_OK:
+        return JSONResponse({"tasks": [], "db_available": False})
+    tasks = db_store.get_tasks(limit=limit)
+    return JSONResponse({"tasks": tasks})
+
+
+@app.get("/api/tasks/active")
+def get_active_task_endpoint() -> JSONResponse:
+    """Return the currently running task or null."""
+    sess = session_mod._current_session
+    if sess and sess.status not in ("completed", "failed", "blocked"):
+        return JSONResponse({
+            "active":     True,
+            "task_id":    sess.task_id,
+            "session_id": sess.session_id,
+            "objective":  sess.task[:100],
+            "scenario":   sess.scenario,
+            "status":     sess.status,
+            "steps": [
+                {"seq": s.seq, "tool": s.tool,
+                 "decision": s.decision, "result": s.result[:80]}
+                for s in sess.steps
+            ],
+        })
+    if _DB_OK:
+        task = db_store.get_active_task()
+        if task:
+            task["active"] = True
+            return JSONResponse(task)
+    return JSONResponse({"active": False})
+
+
+@app.get("/api/decisions")
+def list_decisions(
+    limit: int   = Query(100, ge=1, le=500),
+    decision: str = Query(None),
+    tool: str    = Query(None),
+    task_id: str = Query(None),
+) -> JSONResponse:
+    """List persisted decisions with optional filters."""
+    if not _DB_OK:
+        events = event_bus.get_events()
+        dec_events = [e for e in events if "decision" in e]
+        if decision:
+            dec_events = [e for e in dec_events
+                          if e.get("decision") == decision.upper()]
+        if tool:
+            dec_events = [e for e in dec_events if e.get("tool") == tool]
+        return JSONResponse({"decisions": dec_events[-limit:], "source": "memory"})
+    rows = db_store.get_decisions(
+        limit=limit,
+        decision_filter=decision,
+        tool_filter=tool,
+        task_id=task_id,
+    )
+    return JSONResponse({"decisions": rows, "source": "db"})
+
+
+@app.get("/api/audit")
+def list_audit(
+    limit: int   = Query(100, ge=1, le=500),
+    task_id: str = Query(None),
+) -> JSONResponse:
+    """List persisted audit records from DB."""
+    if not _DB_OK:
+        return JSONResponse({"records": [], "db_available": False})
+    records = db_store.get_audit(limit=limit, task_id=task_id)
+    return JSONResponse({"records": records})
+
+
+@app.get("/api/audit/verify")
+def verify_audit_endpoint() -> JSONResponse:
+    """Verify the full audit hash chain integrity."""
+    if not _DB_OK:
+        return JSONResponse({"valid": None, "message": "DB not available"})
+    result = db_store.verify_audit_chain()
+    return JSONResponse(result)
+
+
+@app.get("/api/incidents")
+def list_incidents(limit: int = Query(100, ge=1, le=500)) -> JSONResponse:
+    """List all incidents."""
+    if not _DB_OK:
+        return JSONResponse({"incidents": [], "db_available": False})
+    incidents = db_store.get_incidents(limit=limit)
+    return JSONResponse({"incidents": incidents})
+
+
+@app.post("/api/incidents")
+async def create_incident_endpoint(body: dict) -> JSONResponse:
+    """Manually create an incident."""
+    if not _DB_OK:
+        return JSONResponse({"error": "DB not available"}, status_code=503)
+    inc_id = db_store.create_incident(
+        severity=body.get("severity", "medium"),
+        resource=body.get("resource", "unknown"),
+        title=body.get("title", "Untitled incident"),
+        evidence=body.get("evidence"),
+        related_task_ids=body.get("related_task_ids"),
+    )
+    return JSONResponse({"id": inc_id, "status": "created"})
+
+
+@app.get("/api/tools")
+def list_tools_endpoint() -> JSONResponse:
+    """Return the 14-tool registry with metadata."""
+    from agent.tools import TOOL_RISK_TIER, ALL_TOOLS
+    _TOOL_DESCRIPTIONS = {
+        "read_file":        "Read a file from the virtual filesystem",
+        "list_directory":   "List files in a directory",
+        "http_get":         "Perform an HTTP GET request",
+        "query_metrics":    "Query performance metrics for a service",
+        "execute_shell":    "Execute a sandboxed shell command",
+        "write_file":       "Write content to the virtual filesystem",
+        "query_database":   "Execute a SQL query against the sandbox DB",
+        "docker_manage":    "Manage Docker containers (start/stop/restart)",
+        "read_secret":      "Read a secret from the Vault",
+        "modify_iam":       "Grant or revoke an IAM permission",
+        "modify_firewall":  "Apply a firewall rule",
+        "deploy_service":   "Deploy or update a running service",
+        "send_notification":"Send a notification to Slack or email",
+        "backup_database":  "Create a production database backup",
+    }
+    tools = []
+    for t in ALL_TOOLS:
+        tier = TOOL_RISK_TIER.get(t.name, 0)
+        tools.append({
+            "name":        t.name,
+            "tier":        tier,
+            "tier_label":  {1: "Low (read-only)", 2: "Medium (write/exec)",
+                            3: "High (privileged)"}.get(tier, "Unknown"),
+            "description": _TOOL_DESCRIPTIONS.get(t.name, ""),
+            "status":      "active",
+        })
+    return JSONResponse({"tools": tools, "count": len(tools)})
 
 
 @app.post("/api/reset")
@@ -395,7 +630,16 @@ def _run_scripted_scenario(name: str) -> None:
     # Fresh session
     task = _TASK_LABELS.get(name, name)
     sess = Session(task=task, scenario=name)
+    sess.set_status("running")
     set_session(sess)
+
+    # Persist task to DB
+    if _DB_OK:
+        try:
+            db_store.upsert_task(sess.task_id, task, name, status="running")
+        except Exception:
+            pass
+
     Interceptor.reset()
     interceptor = Interceptor.get_instance()
     interceptor.intent_analyser.initialise_task(task)
@@ -406,18 +650,34 @@ def _run_scripted_scenario(name: str) -> None:
         "scenario": name,
         "task":     task,
         "session_id": sess.session_id,
+        "task_id":    sess.task_id,
     })
 
     for tool_name, args in actions:
         time.sleep(1.2)   # pace for visual effect on dashboard
         decision = interceptor.evaluate(tool_name=tool_name, args=args)
-        # Event is automatically published to bus (and thus broadcast to WS)
-        # by the interceptor — no extra call needed here.
+        # The interceptor publishes events to the bus (broadcast + persist via subscribers)
+
+    # Determine final status
+    final_status = "completed"
+    if sess.blocked_count > 0 and sess.allowed_count == 0:
+        final_status = "blocked"
+    sess.set_status(final_status)
+
+    summary = sess.summary()
+
+    # Persist final task state
+    if _DB_OK:
+        try:
+            db_store.update_task_status(sess.task_id, final_status, summary=summary)
+        except Exception:
+            pass
 
     # Broadcast session end
     _sync_broadcast({
         "type":    "session_end",
-        "summary": sess.summary(),
+        "summary": summary,
+        "task_id": sess.task_id,
     })
 
 
@@ -428,3 +688,53 @@ def dashboard() -> HTMLResponse:
     html_path = os.path.join(os.path.dirname(__file__), "index.html")
     with open(html_path, encoding="utf-8") as f:
         return HTMLResponse(f.read())
+
+
+@app.get("/agent", response_class=HTMLResponse)
+def agent_page() -> HTMLResponse:
+    html_path = os.path.join(os.path.dirname(__file__), "agent.html")
+    with open(html_path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.post("/api/agent/run")
+async def agent_run(body: dict) -> JSONResponse:
+    """
+    Start the real AXIOM-OPS + SENTINEL agent with a custom task or named scenario.
+    Body: { "scenario": "normal_deploy" }  OR  { "task": "custom task text..." }
+    Events stream to all WebSocket clients in real time.
+    """
+    global _demo_running
+    if _demo_running:
+        return JSONResponse({"status": "already_running"}, status_code=409)
+
+    import config as cfg
+    if cfg.LLM_PROVIDER == "openai" and not cfg.OPENAI_API_KEY:
+        return JSONResponse({
+            "status": "error",
+            "message": "OPENAI_API_KEY not set. Add it to .env or switch LLM_PROVIDER=ollama."
+        }, status_code=400)
+
+    scenario   = body.get("scenario", "custom")
+    custom_task = body.get("task", "")
+
+    _demo_running = True
+
+    def _run():
+        global _demo_running
+        try:
+            from agent.axiom_ops import run_scenario
+            run_scenario(scenario_name=scenario, custom_task=custom_task or None)
+        except Exception as e:
+            import traceback
+            _sync_broadcast({"type": "error", "message": str(e)[:300]})
+        finally:
+            _demo_running = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return JSONResponse({
+        "status":   "started",
+        "scenario": scenario,
+        "mode":     cfg.LLM_PROVIDER,
+        "model":    cfg.OLLAMA_MODEL if cfg.LLM_PROVIDER == "ollama" else cfg.OPENAI_MODEL,
+    })

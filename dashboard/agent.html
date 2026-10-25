@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AXIOM-OPS Agent — SENTINEL Gateway</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top bar ── */
+.topbar {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 0 20px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.topbar .logo { font-weight: 700; font-size: 15px; color: #f0f6fc; letter-spacing: .5px; }
+.topbar .sep  { color: #30363d; }
+.topbar .subtitle { color: #8b949e; font-size: 12px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; display: inline-block; }
+.ws-dot.idle { background: #484f58; }
+#ws-label { font-size: 11px; color: #8b949e; }
+.nav-link {
+  color: #58a6ff; font-size: 12px; text-decoration: none;
+  padding: 4px 10px; border: 1px solid #30363d; border-radius: 4px;
+}
+.nav-link:hover { background: #21262d; }
+
+/* ── Layout ── */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left panel — task launcher ── */
+.launcher {
+  width: 300px;
+  flex-shrink: 0;
+  background: #161b22;
+  border-right: 1px solid #30363d;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  overflow-y: auto;
+}
+.launcher h2 { font-size: 13px; font-weight: 700; color: #f0f6fc; margin-bottom: 4px; }
+.launcher .hint { font-size: 11px; color: #8b949e; line-height: 1.5; }
+
+.model-badge {
+  background: #0d2048;
+  border: 1px solid #1f6feb;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.model-badge .mb-label { color: #8b949e; }
+.model-badge .mb-value { color: #58a6ff; font-weight: 700; }
+
+label { font-size: 11px; color: #8b949e; display: block; margin-bottom: 4px; }
+
+select, textarea {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  padding: 8px 10px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+}
+select:focus, textarea:focus { border-color: #58a6ff; }
+textarea { min-height: 100px; line-height: 1.5; }
+
+.run-btn {
+  width: 100%;
+  padding: 10px;
+  background: #1f6feb;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+.run-btn:hover:not(:disabled) { background: #388bfd; }
+.run-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+.reset-btn {
+  width: 100%;
+  padding: 7px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+}
+.reset-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+
+.scenario-chips { display: flex; flex-direction: column; gap: 5px; }
+.chip {
+  padding: 7px 10px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color .15s, background .15s;
+}
+.chip:hover { background: #21262d; }
+.chip.active { border-color: #1f6feb; background: #0d2048; }
+.chip .chip-icon { font-size: 14px; flex-shrink: 0; }
+.chip .chip-name { font-weight: 600; color: #f0f6fc; }
+.chip .chip-desc { color: #8b949e; font-size: 10px; }
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.stat-box {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.stat-box .sv { font-size: 18px; font-weight: 700; }
+.stat-box .sk { font-size: 9px; color: #8b949e; margin-top: 2px; }
+.stat-allow { color: #3fb950; }
+.stat-warn  { color: #d29922; }
+.stat-block { color: #f85149; }
+
+/* ── Right panel — live feed ── */
+.feed-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.feed-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.feed-header h2 { font-size: 13px; font-weight: 700; color: #f0f6fc; }
+#session-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #21262d;
+  color: #8b949e;
+  border: 1px solid #30363d;
+}
+#spinner {
+  display: none;
+  width: 14px; height: 14px;
+  border: 2px solid #30363d;
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.feed-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Event cards ── */
+.ev {
+  border-radius: 6px;
+  padding: 8px 12px;
+  border-left: 3px solid #30363d;
+  background: #161b22;
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+.ev.thought    { border-left-color: #58a6ff; background: #0d1f3c; }
+.ev.tool-start { border-left-color: #d29922; background: #1c1600; }
+.ev.allow      { border-left-color: #3fb950; background: #0a1f0e; }
+.ev.warn       { border-left-color: #d29922; background: #1c1600; }
+.ev.block      { border-left-color: #f85149; background: #1c0a09; }
+.ev.tool-end   { border-left-color: #30363d; background: #161b22; }
+.ev.session    { border-left-color: #8b949e; background: #21262d; }
+.ev.error      { border-left-color: #f85149; background: #2d1a1a; }
+.ev.final      { border-left-color: #3fb950; background: #0a1f0e; border: 1px solid #3fb950; }
+
+.ev-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.ev-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.tag-thought  { background: #1f4785; color: #58a6ff; }
+.tag-calling  { background: #3d2900; color: #d29922; }
+.tag-allow    { background: #0a3d14; color: #3fb950; }
+.tag-warn     { background: #3d2900; color: #d29922; }
+.tag-block    { background: #3d0f0a; color: #f85149; }
+.tag-result   { background: #21262d; color: #8b949e; }
+.tag-session  { background: #21262d; color: #8b949e; }
+.tag-error    { background: #3d0f0a; color: #f85149; }
+.tag-final    { background: #0a3d14; color: #3fb950; }
+
+.ev-tool  { font-weight: 700; color: #f0f6fc; font-size: 12px; }
+.ev-scores { font-size: 10px; color: #8b949e; margin-left: auto; }
+.ev-body  { font-size: 11px; color: #8b949e; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.ev-reason { font-size: 11px; margin-top: 4px; }
+.ev-reason.block-r { color: #ffa198; }
+.ev-reason.warn-r  { color: #e3b341; }
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #484f58;
+  gap: 8px;
+}
+.empty-state .em { font-size: 36px; }
+.empty-state p   { font-size: 12px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <span class="logo">SENTINEL</span>
+  <span class="sep">|</span>
+  <span class="subtitle">AXIOM-OPS Agent Control</span>
+  <div class="topbar-right">
+    <span class="ws-dot idle" id="ws-dot"></span>
+    <span id="ws-label">Connecting…</span>
+    <a class="nav-link" href="/">Dashboard</a>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- ── Left: Launcher ── -->
+  <div class="launcher">
+    <div>
+      <h2>AXIOM-OPS Agent</h2>
+      <p class="hint">The real LLM agent — every tool call is intercepted by SENTINEL and shown live.</p>
+    </div>
+
+    <div class="model-badge" id="model-badge">
+      <div class="mb-label">LLM Engine</div>
+      <div class="mb-value" id="model-name">checking…</div>
+    </div>
+
+    <div>
+      <label>Preset Scenario</label>
+      <div class="scenario-chips" id="chips">
+        <div class="chip active" data-scenario="normal_deploy" onclick="selectScenario(this)">
+          <span class="chip-icon">✅</span>
+          <div><div class="chip-name">Normal Deploy</div><div class="chip-desc">Safe baseline — deploy staging</div></div>
+        </div>
+        <div class="chip" data-scenario="health_monitor" onclick="selectScenario(this)">
+          <span class="chip-icon">📊</span>
+          <div><div class="chip-name">Health Monitor</div><div class="chip-desc">Check all services + logs</div></div>
+        </div>
+        <div class="chip" data-scenario="prompt_injection" onclick="selectScenario(this)">
+          <span class="chip-icon">💉</span>
+          <div><div class="chip-name">Prompt Injection</div><div class="chip-desc">Log file hijacks agent goal</div></div>
+        </div>
+        <div class="chip" data-scenario="privilege_escalation" onclick="selectScenario(this)">
+          <span class="chip-icon">🔐</span>
+          <div><div class="chip-name">Privilege Escalation</div><div class="chip-desc">Admin IAM grant attempt</div></div>
+        </div>
+        <div class="chip" data-scenario="goal_drift" onclick="selectScenario(this)">
+          <span class="chip-icon">🎯</span>
+          <div><div class="chip-name">Goal Drift</div><div class="chip-desc">Semantic deviation</div></div>
+        </div>
+        <div class="chip" data-scenario="emergent_harm" onclick="selectScenario(this)">
+          <span class="chip-icon">🕸</span>
+          <div><div class="chip-name">Emergent Harm</div><div class="chip-desc">Causal attack chain</div></div>
+        </div>
+        <div class="chip" data-scenario="custom" onclick="selectScenario(this)">
+          <span class="chip-icon">✏️</span>
+          <div><div class="chip-name">Custom Task</div><div class="chip-desc">Type any DevOps task</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="custom-task-box" style="display:none">
+      <label>Custom Task</label>
+      <textarea id="custom-task" placeholder="e.g. Check disk usage on all nodes and alert if above 80%..."></textarea>
+    </div>
+
+    <button class="run-btn" id="run-btn" onclick="runAgent()">▶ Run Agent</button>
+    <button class="reset-btn" onclick="resetFeed()">⟳ Reset</button>
+
+    <div>
+      <label style="margin-bottom:6px">Session Stats</label>
+      <div class="stats-row">
+        <div class="stat-box"><div class="sv stat-allow" id="s-allow">0</div><div class="sk">ALLOW</div></div>
+        <div class="stat-box"><div class="sv stat-warn"  id="s-warn">0</div><div class="sk">WARN</div></div>
+        <div class="stat-box"><div class="sv stat-block" id="s-block">0</div><div class="sk">BLOCK</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: Live feed ── -->
+  <div class="feed-panel">
+    <div class="feed-header">
+      <h2>Live Agent Feed</h2>
+      <span id="session-badge">No active session</span>
+      <div id="spinner"></div>
+    </div>
+    <div class="feed-scroll" id="feed">
+      <div class="empty-state" id="empty">
+        <div class="em">🤖</div>
+        <p>Select a scenario and click <strong>Run Agent</strong></p>
+        <p style="font-size:10px;color:#30363d">AXIOM-OPS will think, call tools, and SENTINEL will intercept every action</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const BASE    = window.location.origin;
+const WS_URL  = `ws://${window.location.host}/ws`;
+
+let ws           = null;
+let wsRetry      = 1000;
+let _scenario    = "normal_deploy";
+let _running     = false;
+let _allowCnt    = 0, _warnCnt = 0, _blockCnt = 0;
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    wsRetry = 1000;
+    document.getElementById('ws-dot').className   = 'ws-dot';
+    document.getElementById('ws-label').textContent = 'Connected';
+  };
+  ws.onmessage = (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    handleEvent(msg);
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-dot').className   = 'ws-dot idle';
+    document.getElementById('ws-label').textContent = 'Reconnecting…';
+    setTimeout(connectWS, wsRetry);
+    wsRetry = Math.min(wsRetry * 1.5, 10000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+// Keep-alive ping
+setInterval(() => { if (ws && ws.readyState === 1) ws.send('ping'); }, 20000);
+
+// ── Event handler ─────────────────────────────────────────────────────────────
+function handleEvent(ev) {
+  removeEmpty();
+
+  if (ev.type === 'session_start') {
+    document.getElementById('session-badge').textContent =
+      `Session ${ev.session_id} · ${ev.scenario}`;
+    document.getElementById('spinner').style.display = 'block';
+    addCard('session', 'SESSION', `Task started: ${ev.scenario}`, ev.task || '');
+    return;
+  }
+
+  if (ev.type === 'session_end') {
+    document.getElementById('spinner').style.display = 'none';
+    setRunning(false);
+    const s = ev.summary || {};
+    addCard('final', 'COMPLETE',
+      `Session finished — ${s.total_actions || 0} actions`,
+      `OK ${s.allowed||0}  |  WARN ${s.warned||0}  |  BLOCK ${s.blocked||0}  |  Risk ${(s.overall_risk||0).toFixed(2)}  |  PFA: ${s.final_pfa_state||'?'}`
+    );
+    return;
+  }
+
+  if (ev.type === 'agent_thought') {
+    addCard('thought', 'THINKING', '', ev.content || '');
+    return;
+  }
+
+  if (ev.type === 'agent_tool_start') {
+    addCard('tool-start', 'CALLING', ev.tool || '', ev.input || '');
+    return;
+  }
+
+  if (ev.type === 'agent_tool_end') {
+    addCard('tool-end', 'RESULT', '', ev.output || '');
+    return;
+  }
+
+  if (ev.type === 'error') {
+    addCard('error', 'ERROR', '', ev.message || '');
+    document.getElementById('spinner').style.display = 'none';
+    setRunning(false);
+    return;
+  }
+
+  // ── SENTINEL decision event (tool + decision + scores) ───────────────────
+  if (ev.tool && ev.decision) {
+    const dec   = ev.decision;           // ALLOW / WARN / BLOCK
+    const cls   = dec.toLowerCase();
+    const tag   = dec;
+    const scores = ev.scores || {};
+
+    if (dec === 'ALLOW') _allowCnt++;
+    if (dec === 'WARN')  _warnCnt++;
+    if (dec === 'BLOCK') _blockCnt++;
+    updateStats();
+
+    const scoreStr = `sec=${(scores.security||0).toFixed(2)} ` +
+                     `saf=${(scores.safety||0).toFixed(2)} ` +
+                     `drift=${(ev.drift||0).toFixed(2)}`;
+
+    let extra = '';
+    if (ev.reason && dec !== 'ALLOW') {
+      extra = ev.reason;
+    }
+    if (ev.ltl_violations && ev.ltl_violations.length) {
+      extra = `LTL: ${ev.ltl_violations.join(', ')}  ${extra}`;
+    }
+
+    addSentinelCard(cls, tag, ev.tool, ev.args || {}, scoreStr,
+                    extra, ev.pfa_state || '', dec);
+  }
+}
+
+// ── Card builders ─────────────────────────────────────────────────────────────
+function removeEmpty() {
+  const e = document.getElementById('empty');
+  if (e) e.remove();
+}
+
+function addCard(cls, tag, title, body) {
+  const feed = document.getElementById('feed');
+  const div  = document.createElement('div');
+  div.className = `ev ${cls}`;
+
+  const tagCls = {
+    'SESSION':  'tag-session',
+    'THINKING': 'tag-thought',
+    'CALLING':  'tag-calling',
+    'RESULT':   'tag-result',
+    'ERROR':    'tag-error',
+    'COMPLETE': 'tag-final',
+  }[tag] || 'tag-session';
+
+  div.innerHTML = `
+    <div class="ev-header">
+      <span class="ev-tag ${tagCls}">${tag}</span>
+      ${title ? `<span class="ev-tool">${escHtml(title)}</span>` : ''}
+    </div>
+    ${body ? `<div class="ev-body">${escHtml(body)}</div>` : ''}
+  `;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function addSentinelCard(cls, tag, toolName, args, scoreStr, reason, pfaState, decision) {
+  const feed = document.getElementById('feed');
+  const div  = document.createElement('div');
+  div.className = `ev ${cls}`;
+
+  const tagCls = { 'ALLOW': 'tag-allow', 'WARN': 'tag-warn', 'BLOCK': 'tag-block' }[tag] || 'tag-result';
+  const reasonCls = decision === 'BLOCK' ? 'block-r' : 'warn-r';
+
+  const argsStr = Object.entries(args)
+    .map(([k,v]) => `${k}=${String(v).slice(0,60)}`)
+    .join('  ');
+
+  div.innerHTML = `
+    <div class="ev-header">
+      <span class="ev-tag ${tagCls}">SENTINEL · ${tag}</span>
+      <span class="ev-tool">${escHtml(toolName)}</span>
+      <span class="ev-scores">${escHtml(scoreStr)} | ${escHtml(pfaState)}</span>
+    </div>
+    ${argsStr ? `<div class="ev-body" style="color:#6e7681">${escHtml(argsStr)}</div>` : ''}
+    ${reason  ? `<div class="ev-reason ${reasonCls}">${escHtml(reason)}</div>` : ''}
+  `;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+function selectScenario(el) {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  _scenario = el.dataset.scenario;
+  document.getElementById('custom-task-box').style.display =
+    _scenario === 'custom' ? 'block' : 'none';
+}
+
+function setRunning(on) {
+  _running = on;
+  const btn = document.getElementById('run-btn');
+  btn.disabled    = on;
+  btn.textContent = on ? '⏳ Agent Running…' : '▶ Run Agent';
+  document.getElementById('spinner').style.display = on ? 'block' : 'none';
+}
+
+function updateStats() {
+  document.getElementById('s-allow').textContent = _allowCnt;
+  document.getElementById('s-warn').textContent  = _warnCnt;
+  document.getElementById('s-block').textContent = _blockCnt;
+}
+
+function runAgent() {
+  if (_running) return;
+
+  const customTask = document.getElementById('custom-task').value.trim();
+  if (_scenario === 'custom' && !customTask) {
+    alert('Please type a task before running.');
+    return;
+  }
+
+  // Clear feed
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '';
+  _allowCnt = _warnCnt = _blockCnt = 0;
+  updateStats();
+  setRunning(true);
+
+  const body = _scenario === 'custom'
+    ? { scenario: 'custom', task: customTask }
+    : { scenario: _scenario };
+
+  fetch(`${BASE}/api/agent/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.status === 'already_running') {
+      alert('An agent run is already in progress. Reset first.');
+      setRunning(false);
+    } else if (d.status === 'error') {
+      addCard('error', 'ERROR', '', d.message || 'Unknown error');
+      setRunning(false);
+    }
+  })
+  .catch(err => {
+    addCard('error', 'ERROR', '', 'Cannot reach dashboard server: ' + err);
+    setRunning(false);
+  });
+}
+
+function resetFeed() {
+  fetch(`${BASE}/api/reset`, { method: 'POST' }).catch(() => {});
+  document.getElementById('feed').innerHTML = `
+    <div class="empty-state" id="empty">
+      <div class="em">🤖</div>
+      <p>Select a scenario and click <strong>Run Agent</strong></p>
+      <p style="font-size:10px;color:#30363d">AXIOM-OPS will think, call tools, and SENTINEL will intercept every action</p>
+    </div>`;
+  _allowCnt = _warnCnt = _blockCnt = 0;
+  updateStats();
+  setRunning(false);
+  document.getElementById('session-badge').textContent = 'No active session';
+}
+
+// ── Check LLM status on boot ──────────────────────────────────────────────────
+function checkStatus() {
+  fetch(`${BASE}/api/status`)
+    .then(r => r.json())
+    .then(d => {
+      const name = d.llm_model || (d.llm_provider === 'ollama' ? 'Ollama' : 'OpenAI');
+      document.getElementById('model-name').textContent =
+        `${d.llm_provider} / ${name}`;
+      if (d.demo_running && !_running) setRunning(true);
+      if (!d.demo_running && _running) setRunning(false);
+    })
+    .catch(() => {
+      document.getElementById('model-name').textContent = 'server offline';
+    });
+}
+
+setInterval(checkStatus, 3000);
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+connectWS();
+checkStatus();
+</script>
+</body>
+</html>

@@ -1,16 +1,18 @@
 """
 SENTINEL — AXIOM-OPS Main Agent
-Builds and runs the LangChain ReAct agent with SENTINEL monitoring.
+Builds and runs the LangChain agent with SENTINEL monitoring.
+Uses the LangChain 1.x create_agent API (backed by LangGraph).
 """
 
 from __future__ import annotations
 
-import os
+import time
 from typing import Any
 
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain.prompts import PromptTemplate
-from langchain_core.language_models import BaseLanguageModel
+from langchain.agents import create_agent
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.callbacks import BaseCallbackHandler
 
 import config
 from agent.tools   import ALL_TOOLS
@@ -18,34 +20,14 @@ from agent.prompts import SYSTEM_PROMPT, SCENARIO_PROMPTS
 from agent.session import Session, set_session
 from sentinel.interceptor import Interceptor
 
-
-# ── Prompt template for ReAct ─────────────────────────────────────────────────
-# LangChain's ReAct loop requires: {tools}, {tool_names}, {input}, {agent_scratchpad}
-
-_REACT_TEMPLATE = SYSTEM_PROMPT + """
-
-You have access to the following tools:
-{tools}
-
-Use the following format EXACTLY:
-
-Thought: [your reasoning about the current step]
-Action: [tool name — must be one of: {tool_names}]
-Action Input: [input to the tool as a plain string or JSON]
-Observation: [result of the tool call]
-... (repeat Thought/Action/Action Input/Observation as needed)
-Thought: I now have enough information to complete the task.
-Final Answer: [your final response to the task]
-
-Begin!
-
-Task: {input}
-{agent_scratchpad}"""
-
-_PROMPT = PromptTemplate.from_template(_REACT_TEMPLATE)
+try:
+    from db import store as db_store
+    _DB_AVAILABLE = True
+except Exception:
+    _DB_AVAILABLE = False
 
 
-def _build_llm() -> BaseLanguageModel:
+def _build_llm() -> BaseChatModel:
     """Build the LLM based on configuration."""
     provider = config.LLM_PROVIDER
 
@@ -58,8 +40,8 @@ def _build_llm() -> BaseLanguageModel:
         )
 
     if provider == "ollama":
-        from langchain_community.llms import Ollama
-        return Ollama(
+        from langchain_ollama import ChatOllama
+        return ChatOllama(
             model=config.OLLAMA_MODEL,
             base_url=config.OLLAMA_BASE,
             temperature=0,
@@ -68,22 +50,84 @@ def _build_llm() -> BaseLanguageModel:
     raise ValueError(f"Unknown LLM_PROVIDER: {provider!r}. Use 'openai' or 'ollama'.")
 
 
-def build_agent(tools=None) -> AgentExecutor:
+# ── Callback handler — broadcasts agent thoughts to the event bus ─────────────
+
+class _SentinelCallbackHandler(BaseCallbackHandler):
+    """Streams AXIOM-OPS reasoning steps to the event bus so the Agent page
+    can display them in real time alongside SENTINEL decisions."""
+
+    def _publish_thought(self, text: str) -> None:
+        if not text.strip():
+            return
+        try:
+            from sentinel import event_bus
+            event_bus.publish({
+                "type":    "agent_thought",
+                "content": text.strip()[:600],
+                "ts":      time.time(),
+            })
+        except Exception:
+            pass
+
+    def on_llm_end(self, response, **kwargs):
+        """Fires for plain LLM models."""
+        try:
+            if response.generations:
+                gen  = response.generations[0][0]
+                text = getattr(gen, "text", "")
+                self._publish_thought(text)
+        except Exception:
+            pass
+
+    def on_chat_model_end(self, response, **kwargs):
+        """Fires for ChatModels (ChatOllama, ChatOpenAI) — this is the right hook."""
+        try:
+            if response.generations:
+                gen = response.generations[0][0]
+                # ChatGeneration stores content in .message.content
+                msg  = getattr(gen, "message", None)
+                text = getattr(msg, "content", "") if msg else getattr(gen, "text", "")
+                self._publish_thought(str(text))
+        except Exception:
+            pass
+
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        """Fires just before a tool is called — before SENTINEL intercepts it."""
+        try:
+            from sentinel import event_bus
+            event_bus.publish({
+                "type":      "agent_tool_start",
+                "tool":      serialized.get("name", "unknown"),
+                "input":     str(input_str)[:300],
+                "ts":        time.time(),
+            })
+        except Exception:
+            pass
+
+    def on_tool_end(self, output, **kwargs):
+        """Fires after a tool returns its result (post-SENTINEL)."""
+        try:
+            from sentinel import event_bus
+            event_bus.publish({
+                "type":   "agent_tool_end",
+                "output": str(output)[:400],
+                "ts":     time.time(),
+            })
+        except Exception:
+            pass
+
+
+def build_agent(tools=None):
     """
-    Build the AXIOM-OPS AgentExecutor.
-    Optionally pass a subset of tools (used by the Least-Privilege Controller).
+    Build the AXIOM-OPS agent using LangChain 1.x create_agent.
+    Returns a compiled LangGraph runnable.
     """
     llm   = _build_llm()
     tools = tools or ALL_TOOLS
-
-    agent = create_react_agent(llm=llm, tools=tools, prompt=_PROMPT)
-    return AgentExecutor(
-        agent=agent,
+    return create_agent(
+        model=llm,
         tools=tools,
-        verbose=config.AGENT_VERBOSE,
-        max_iterations=config.AGENT_MAX_ITERATIONS,
-        handle_parsing_errors=True,
-        return_intermediate_steps=True,
+        system_prompt=SYSTEM_PROMPT,
     )
 
 
@@ -94,10 +138,11 @@ def run_scenario(scenario_name: str,
     Run a named scenario (or a custom task) through AXIOM-OPS + SENTINEL.
 
     Returns a result dict with:
-      - output: final agent answer
-      - steps:  list of (action, observation) tuples
-      - session_summary: dict from Session.summary()
-      - events: all intercepted events from the event bus
+      - output:           final agent answer (string)
+      - steps:            list of (tool_name, args, result) triples
+      - session_summary:  dict from Session.summary()
+      - events:           all intercepted events from the event bus
+      - session:          the Session object
     """
     # Resolve task text
     task = custom_task or SCENARIO_PROMPTS.get(scenario_name, "")
@@ -107,19 +152,25 @@ def run_scenario(scenario_name: str,
 
     # ── Set up fresh session ──────────────────────────────────────────────────
     sess = Session(task=task, scenario=scenario_name)
+    sess.set_status("planning")
     set_session(sess)
+
+    # Persist task record
+    if _DB_AVAILABLE:
+        try:
+            db_store.upsert_task(sess.task_id, task, scenario_name,
+                                 status="planning")
+        except Exception:
+            pass
 
     # Reset interceptor state for new session
     Interceptor.reset()
     interceptor = Interceptor.get_instance()
     interceptor.intent_analyser.initialise_task(task)
 
-    # Reset event bus — preserve any active dashboard WS subscribers
+    # Reset event bus ring buffer — keep all subscribers intact
     from sentinel import event_bus
-    existing_subscribers = list(event_bus._subscribers)  # snapshot before clear
-    event_bus.clear()
-    for sub in existing_subscribers:                      # re-register them
-        event_bus.subscribe(sub)
+    event_bus.clear_events_only()
 
     # Broadcast session start to any connected dashboard
     event_bus.publish({
@@ -127,34 +178,92 @@ def run_scenario(scenario_name: str,
         "scenario":   scenario_name,
         "task":       task,
         "session_id": sess.session_id,
+        "task_id":    sess.task_id,
     })
 
     # ── Print session header ──────────────────────────────────────────────────
-    print("\n" + "═" * 70)
-    print(f"  SENTINEL | AXIOM-OPS  —  Session {sess.session_id}")
+    print("\n" + "=" * 70)
+    print(f"  SENTINEL | AXIOM-OPS  --  Session {sess.session_id}")
     print(f"  Scenario : {scenario_name}")
     print(f"  Task     : {task[:80]}{'...' if len(task) > 80 else ''}")
-    print("═" * 70 + "\n")
+    print(f"  LLM      : {config.LLM_PROVIDER} / "
+          f"{config.OLLAMA_MODEL if config.LLM_PROVIDER == 'ollama' else config.OPENAI_MODEL}")
+    print("=" * 70 + "\n")
 
     # ── Run agent ─────────────────────────────────────────────────────────────
-    executor = build_agent()
-    result   = executor.invoke({"input": task})
+    sess.set_status("running")
+    if _DB_AVAILABLE:
+        try:
+            db_store.update_task_status(sess.task_id, "running")
+        except Exception:
+            pass
+
+    agent    = build_agent()
+    callback = _SentinelCallbackHandler()
+    try:
+        result   = agent.invoke(
+            {"messages": [HumanMessage(content=task)]},
+            config={"callbacks": [callback]},
+        )
+        messages = result.get("messages", [])
+    except Exception as exc:
+        sess.set_status("failed")
+        if _DB_AVAILABLE:
+            try:
+                db_store.update_task_status(sess.task_id, "failed",
+                                            summary=sess.summary())
+            except Exception:
+                pass
+        raise
+
+    # ── Extract final answer and intermediate steps ───────────────────────────
+    output = ""
+    steps  = []
+    for msg in messages:
+        if isinstance(msg, AIMessage) and msg.content:
+            output = str(msg.content)          # last AI text = final answer
+        # Capture tool calls from AIMessage tool_calls attribute
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            for tc in msg.tool_calls:
+                steps.append((tc.get("name", ""), tc.get("args", {}), ""))
+    # Backfill tool results into steps
+    tool_results = [m for m in messages if isinstance(m, ToolMessage)]
+    for i, tr in enumerate(tool_results):
+        if i < len(steps):
+            steps[i] = (steps[i][0], steps[i][1], str(tr.content)[:200])
 
     # ── Collect outputs ───────────────────────────────────────────────────────
+    sess.set_status("verifying")
     events  = event_bus.get_events()
     summary = sess.summary()
+
+    # Determine final status
+    final_status = "completed"
+    if sess.blocked_count > 0 and sess.allowed_count == 0:
+        final_status = "blocked"
+    sess.set_status(final_status)
+    summary["status"] = final_status
+
+    # Persist final task state
+    if _DB_AVAILABLE:
+        try:
+            db_store.update_task_status(sess.task_id, final_status,
+                                        summary=summary)
+        except Exception:
+            pass
 
     # Broadcast session end to any connected dashboard
     event_bus.publish({
         "type":    "session_end",
         "summary": summary,
+        "task_id": sess.task_id,
     })
 
     _print_session_summary(summary, events)
 
     return {
-        "output":          result.get("output", ""),
-        "steps":           result.get("intermediate_steps", []),
+        "output":          output,
+        "steps":           steps,
         "session_summary": summary,
         "events":          events,
         "session":         sess,
@@ -163,14 +272,14 @@ def run_scenario(scenario_name: str,
 
 def _print_session_summary(summary: dict, events: list) -> None:
     """Pretty-print a session summary to stdout."""
-    print("\n" + "─" * 70)
+    print("\n" + "-" * 70)
     print("  SENTINEL SESSION SUMMARY")
-    print("─" * 70)
+    print("-" * 70)
     print(f"  Session ID : {summary['session_id']}")
     print(f"  Scenario   : {summary['scenario']}")
     print(f"  Duration   : {summary['duration_s']}s")
     print(f"  Actions    : {summary['total_actions']}  "
-          f"(✓ {summary['allowed']}  ⚠ {summary['warned']}  ✕ {summary['blocked']})")
+          f"(OK {summary['allowed']}  WARN {summary['warned']}  BLOCK {summary['blocked']})")
     print(f"  Violations : {summary['violations']}")
     print(f"  PFA State  : {summary['final_pfa_state']}")
     print(f"  Risk Score : {summary['overall_risk']}")
@@ -179,8 +288,10 @@ def _print_session_summary(summary: dict, events: list) -> None:
     if events:
         print("\n  Action Log:")
         for ev in events:
-            icon = {"ALLOW": "✓", "WARN": "⚠", "BLOCK": "✕"}.get(ev["decision"], "?")
-            print(f"    {ev['seq']:>2}. {icon} [{ev['decision']:<5}] "
+            if "decision" not in ev:
+                continue
+            icon = {"ALLOW": "[OK]", "WARN": "[WARN]", "BLOCK": "[BLOCK]"}.get(ev["decision"], "[?]")
+            print(f"    {ev['seq']:>2}. {icon:<7} "
                   f"{ev['tool']:<22} "
                   f"sec={ev['scores']['security']:.2f} "
                   f"saf={ev['scores']['safety']:.2f} "
@@ -189,5 +300,5 @@ def _print_session_summary(summary: dict, events: list) -> None:
             if ev.get("ltl_violations"):
                 print(f"         LTL: {', '.join(ev['ltl_violations'])}")
             if ev["decision"] == "BLOCK":
-                print(f"         ↳  {ev['reason'][:90]}")
-    print("─" * 70 + "\n")
+                print(f"         ->  {ev['reason'][:90]}")
+    print("-" * 70 + "\n")

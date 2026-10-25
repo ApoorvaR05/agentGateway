@@ -1,1120 +1,1017 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>SENTINEL — Live Agent Monitor</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL OPS — AXIOM-OPS Safety Gateway</title>
 <style>
-/* ── Reset & base ─────────────────────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,"Segoe UI",system-ui,sans-serif;font-size:13px;
-     line-height:1.5;background:#0d1117;color:#e6edf3;min-height:100vh}
-code{font-family:"Consolas","Courier New",monospace}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── Layout ───────────────────────────────────────────────────────────── */
-.topbar{display:flex;align-items:center;justify-content:space-between;
-        padding:10px 20px;background:#161b22;border-bottom:1px solid #30363d;
-        position:sticky;top:0;z-index:100}
-.topbar h1{font-size:15px;font-weight:700;letter-spacing:.3px;color:#58a6ff}
-.topbar h1 span{color:#e6edf3;font-weight:400}
-.status-pill{display:flex;align-items:center;gap:6px;font-size:12px;
-             background:#21262d;border:1px solid #30363d;border-radius:20px;
-             padding:4px 12px;cursor:pointer;transition:background .15s}
-.status-pill:hover{background:#30363d}
-.dot{width:8px;height:8px;border-radius:50%;background:#238636;
-     animation:pulse 2s infinite}
-.dot.idle{background:#6e7681;animation:none}
-.dot.warn{background:#d29922}
-.dot.block{background:#da3633;animation:pulse-red 1s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-@keyframes pulse-red{0%,100%{opacity:1;box-shadow:0 0 0 0 #da363366}
-                     50%{opacity:.7;box-shadow:0 0 0 6px #da363300}}
+:root {
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface2:  #1c2128;
+  --border:    #30363d;
+  --text:      #e6edf3;
+  --muted:     #7d8590;
+  --accent:    #3b82d4;
+  --allow:     #238636;
+  --warn:      #9e6a03;
+  --block:     #da3633;
+  --allow-bg:  #0d2a14;
+  --warn-bg:   #2d1e00;
+  --block-bg:  #2d0909;
+  --sidebar-w: 200px;
+}
 
-.main{display:grid;grid-template-columns:340px 1fr;gap:0;height:calc(100vh - 47px)}
-.sidebar{background:#161b22;border-right:1px solid #30363d;
-         overflow-y:auto;padding:14px}
-.content{overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+body { background: var(--bg); color: var(--text); font-family: -apple-system,"Segoe UI",system-ui,sans-serif; font-size: 14px; line-height: 1.6; display: flex; height: 100vh; overflow: hidden; }
 
-/* ── Cards ────────────────────────────────────────────────────────────── */
-.card{background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden}
-.card-header{padding:8px 14px;background:#21262d;border-bottom:1px solid #30363d;
-             display:flex;align-items:center;justify-content:space-between}
-.card-header h3{font-size:12px;font-weight:700;text-transform:uppercase;
-                letter-spacing:.5px;color:#8b949e}
-.card-body{padding:12px 14px}
+/* ── Sidebar ─────────────────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w);
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+#sidebar-header {
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+#sidebar-header h1 { font-size: 13px; font-weight: 700; letter-spacing: .04em; color: var(--text); }
+#sidebar-header p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-/* ── Scenario buttons ─────────────────────────────────────────────────── */
-.scenario-grid{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-.scenario-btn{display:flex;align-items:center;gap:10px;padding:9px 12px;
-              background:#21262d;border:1px solid #30363d;border-radius:6px;
-              cursor:pointer;transition:all .15s;text-align:left;color:#e6edf3}
-.scenario-btn:hover{background:#2d333b;border-color:#58a6ff}
-.scenario-btn.active{background:#1f3048;border-color:#58a6ff}
-.scenario-btn.danger{border-left:3px solid #da3633}
-.scenario-btn.warn{border-left:3px solid #d29922}
-.scenario-btn.safe{border-left:3px solid #238636}
-.scenario-btn.purple{border-left:3px solid #8957e5}
-.btn-icon{font-size:16px;width:24px;text-align:center;flex-shrink:0}
-.btn-text .bn{font-size:12px;font-weight:700}
-.btn-text .bd{font-size:11px;color:#8b949e}
-.reset-btn{width:100%;padding:8px;background:#21262d;border:1px solid #30363d;
-           border-radius:6px;color:#8b949e;cursor:pointer;font-size:12px;
-           transition:all .15s;margin-top:4px}
-.reset-btn:hover{background:#2d333b;color:#e6edf3}
+nav { flex: 1; padding: 8px 0; }
+nav a {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 14px; font-size: 13px; color: var(--muted);
+  text-decoration: none; border-left: 3px solid transparent;
+  cursor: pointer; user-select: none;
+}
+nav a:hover  { color: var(--text); background: var(--surface2); }
+nav a.active { color: var(--text); background: var(--surface2); border-left-color: var(--accent); }
+.nav-icon { width: 14px; text-align: center; font-style: normal; }
 
-/* ── Score gauges ─────────────────────────────────────────────────────── */
-.gauge-row{margin:6px 0}
-.gauge-label{display:flex;justify-content:space-between;font-size:11px;
-             margin-bottom:3px;color:#8b949e}
-.gauge-label .val{font-weight:700;color:#e6edf3}
-.gauge-track{height:7px;background:#21262d;border-radius:4px;overflow:hidden}
-.gauge-fill{height:100%;border-radius:4px;transition:width .4s ease,background .4s ease}
+/* ── Main content ────────────────────────────────────────── */
+#main { flex: 1; overflow-y: auto; padding: 20px 24px; }
 
-/* ── Stat chips ───────────────────────────────────────────────────────── */
-.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
-.stat{background:#21262d;border:1px solid #30363d;border-radius:6px;
-      padding:8px 10px;text-align:center}
-.stat .sv{font-size:20px;font-weight:800;line-height:1}
-.stat .sl{font-size:10px;color:#8b949e;margin-top:2px;text-transform:uppercase;
-          letter-spacing:.4px}
-.sv.green{color:#3fb950}
-.sv.amber{color:#d29922}
-.sv.red{color:#f85149}
-.sv.blue{color:#58a6ff}
-.sv.gray{color:#8b949e}
+.page { display: none; }
+.page.active { display: block; }
 
-/* ── Overall risk badge ───────────────────────────────────────────────── */
-.risk-banner{border-radius:6px;padding:10px 14px;margin-bottom:10px;
-             display:flex;align-items:center;justify-content:space-between;
-             transition:background .3s,border .3s}
-.risk-banner.safe{background:#0d2c1a;border:1px solid #238636}
-.risk-banner.warn{background:#2d2000;border:1px solid #d29922}
-.risk-banner.critical{background:#3d0f0f;border:1px solid #da3633}
-.risk-banner .rl{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:.4px}
-.risk-banner .rv{font-size:24px;font-weight:800}
-.risk-banner .rb{font-size:12px;font-weight:700;padding:3px 10px;border-radius:12px}
-.rb.safe{background:#0a3622;color:#3fb950;border:1px solid #238636}
-.rb.warn{background:#2d2000;color:#d29922;border:1px solid #d29922}
-.rb.critical{background:#3d0f0f;color:#f85149;border:1px solid #da3633}
+/* ── Typography ──────────────────────────────────────────── */
+h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 
-/* ── Session info ─────────────────────────────────────────────────────── */
-.info-row{display:flex;justify-content:space-between;padding:4px 0;
-          border-bottom:1px solid #21262d;font-size:12px}
-.info-row:last-child{border-bottom:none}
-.info-row .ik{color:#8b949e}
-.info-row .iv{color:#e6edf3;font-weight:600;text-align:right;max-width:180px;
-              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pfa-badge{display:inline-block;padding:2px 8px;border-radius:4px;
-           font-size:11px;font-weight:700}
-.pfa-Idle,.pfa-Planning{background:#1c2128;border:1px solid #30363d;color:#8b949e}
-.pfa-ReadOnly{background:#0d2c1a;border:1px solid #238636;color:#3fb950}
-.pfa-WriteAccess{background:#1c2a1e;border:1px solid #2ea043;color:#3fb950}
-.pfa-PrivilegedAccess{background:#2d2000;border:1px solid #d29922;color:#d29922}
-.pfa-Anomalous{background:#3d0f0f;border:1px solid #da3633;color:#f85149}
-.pfa-Recovering{background:#0d2048;border:1px solid #1f6feb;color:#58a6ff}
-.pfa-Terminated{background:#21262d;border:1px solid #da3633;color:#da3633}
-.monitor-badge{display:inline-block;padding:2px 8px;border-radius:4px;
-               font-size:11px;font-weight:700}
-.monitor-normal{background:#0d2c1a;color:#3fb950}
-.monitor-elevated{background:#2d2000;color:#d29922}
-.monitor-critical{background:#3d0f0f;color:#f85149}
+/* ── Cards / surfaces ────────────────────────────────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 14px 16px; margin-bottom: 14px;
+}
+.card-title { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+.card-val   { font-size: 22px; font-weight: 600; }
 
-/* ── Action feed ──────────────────────────────────────────────────────── */
-#action-feed{max-height:360px;overflow-y:auto;display:flex;
-             flex-direction:column;gap:4px}
-.action-item{display:flex;align-items:flex-start;gap:8px;padding:7px 10px;
-             background:#21262d;border:1px solid #30363d;border-radius:5px;
-             animation:slide-in .2s ease;font-size:12px}
-.action-item.BLOCK{border-left:3px solid #da3633;background:#1a0f0f}
-.action-item.WARN {border-left:3px solid #d29922;background:#1a1500}
-.action-item.ALLOW{border-left:3px solid #238636}
-@keyframes slide-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-.ai-seq{color:#8b949e;width:22px;flex-shrink:0;font-weight:700}
-.ai-dec{width:42px;font-weight:800;flex-shrink:0}
-.ai-dec.ALLOW{color:#3fb950}.ai-dec.WARN{color:#d29922}.ai-dec.BLOCK{color:#f85149}
-.ai-tool{color:#79c0ff;font-family:monospace;flex-shrink:0;width:140px;
-         overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ai-scores{display:flex;gap:6px;color:#8b949e;flex-shrink:0}
-.ai-scores span{font-size:11px}
-.ai-reason{color:#8b949e;font-size:11px;flex:1;overflow:hidden;
-           text-overflow:ellipsis;white-space:nowrap}
+.grid { display: grid; gap: 12px; }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
 
-/* ── Violations log ───────────────────────────────────────────────────── */
-.viol-item{padding:7px 10px;background:#1a0f0f;border:1px solid #da3633;
-           border-radius:5px;margin-bottom:5px;font-size:12px;
-           animation:slide-in .2s ease}
-.viol-item .vt{color:#f85149;font-weight:700;margin-bottom:2px}
-.viol-item .vd{color:#8b949e}
+/* ── Health strip ────────────────────────────────────────── */
+.health-strip {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.health-pill {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 14px; font-size: 13px;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok    { background: #3fb950; }
+.dot.warn  { background: #d29922; }
+.dot.fail  { background: var(--block); }
 
-/* ── Risk timeline chart ──────────────────────────────────────────────── */
-#risk-chart{width:100%;height:140px}
+/* ── Tables ──────────────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 7px 10px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2); }
 
-/* ── PFA state diagram ────────────────────────────────────────────────── */
-.pfa-diagram{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:4px 0}
-.pfa-node{padding:7px 6px;border-radius:5px;text-align:center;font-size:11px;
-          font-weight:700;border:2px solid transparent;transition:all .3s;cursor:default}
-.pfa-node.active{box-shadow:0 0 0 3px #58a6ff66;transform:scale(1.05)}
-.pfa-node[data-state="Idle"]{background:#1c2128;border-color:#30363d;color:#8b949e}
-.pfa-node[data-state="Planning"]{background:#1c2128;border-color:#30363d;color:#8b949e}
-.pfa-node[data-state="ReadOnly"]{background:#0d2c1a;border-color:#238636;color:#3fb950}
-.pfa-node[data-state="WriteAccess"]{background:#1c2a1e;border-color:#2ea043;color:#3fb950}
-.pfa-node[data-state="PrivilegedAccess"]{background:#2d2000;border-color:#d29922;color:#d29922}
-.pfa-node[data-state="Anomalous"]{background:#3d0f0f;border-color:#da3633;color:#f85149}
-.pfa-node[data-state="Recovering"]{background:#0d2048;border-color:#1f6feb;color:#58a6ff}
-.pfa-node[data-state="Terminated"]{background:#21262d;border-color:#da3633;color:#da3633}
+/* ── Badges ──────────────────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+}
+.badge-allow { background: var(--allow-bg); color: #3fb950; border: 1px solid #238636; }
+.badge-warn  { background: var(--warn-bg);  color: #d29922; border: 1px solid #9e6a03; }
+.badge-block { background: var(--block-bg); color: #f85149; border: 1px solid #da3633; }
+.badge-t1    { background: #0d1a2d; color: #79c0ff; border: 1px solid #1f6feb; }
+.badge-t2    { background: #1a1000; color: #e3b341; border: 1px solid #9e6a03; }
+.badge-t3    { background: var(--block-bg); color: #f85149; border: 1px solid #da3633; }
+.badge-info  { background: #0d2a3a; color: #58b6e4; border: 1px solid #1158a0; }
+.badge-status { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
 
-/* ── Alert timeline ───────────────────────────────────────────────────── */
-.alert-item{display:flex;gap:8px;padding:6px 10px;border-radius:5px;
-            margin-bottom:4px;font-size:12px;animation:slide-in .2s ease}
-.alert-item.block{background:#1a0f0f;border:1px solid #da3633}
-.alert-item.warn{background:#1a1500;border:1px solid #d29922}
-.alert-item.ltl{background:#1a0020;border:1px solid #8957e5}
-.alert-time{color:#8b949e;font-size:11px;white-space:nowrap}
-.alert-msg{flex:1;color:#e6edf3}
+/* ── Forms ───────────────────────────────────────────────── */
+textarea, select, input[type=text] {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); border-radius: 5px; padding: 8px 10px;
+  font-size: 13px; font-family: inherit; width: 100%;
+}
+textarea { resize: vertical; }
+.form-row { margin-bottom: 10px; }
+.form-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+button {
+  background: var(--accent); color: #fff; border: none; border-radius: 5px;
+  padding: 7px 18px; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+button:disabled { opacity: .5; cursor: default; }
+button.secondary {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border);
+}
 
-/* ── Empty state ──────────────────────────────────────────────────────── */
-.empty{padding:24px;text-align:center;color:#8b949e;font-size:12px}
-.empty .em{font-size:28px;margin-bottom:8px}
+/* ── Step trace ──────────────────────────────────────────── */
+.step-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.step-row:last-child { border-bottom: none; }
+.step-seq { color: var(--muted); min-width: 22px; text-align: right; }
+.step-info { flex: 1; }
+.step-tool { font-weight: 600; }
+.step-result { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-/* ── Scrollbar ────────────────────────────────────────────────────────── */
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:#161b22}
-::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:#484f58}
+/* ── Sandbox label ───────────────────────────────────────── */
+.sandbox-tag {
+  font-size: 10px; color: var(--muted); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 5px; vertical-align: middle;
+}
+
+/* ── Detail panel ────────────────────────────────────────── */
+#decision-detail {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 14px 16px;
+  font-size: 13px; min-height: 100px;
+  white-space: pre-wrap; font-family: "Consolas","Courier New",monospace;
+  color: var(--muted);
+}
+
+/* ── Filter row ──────────────────────────────────────────── */
+.filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-row button { padding: 5px 14px; font-size: 12px; }
+.filter-row button.active { background: var(--surface); border: 1px solid var(--accent); color: var(--accent); }
+
+/* ── Empty state ─────────────────────────────────────────── */
+.empty { color: var(--muted); text-align: center; padding: 30px 0; font-size: 13px; }
+
+/* ── Search input ────────────────────────────────────────── */
+.search-row { margin-bottom: 12px; }
+.search-row input { max-width: 340px; }
+
+/* ── Infrastructure service card ─────────────────────────── */
+.svc-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px 14px;
+}
+.svc-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.svc-status { font-size: 12px; margin-bottom: 8px; }
+.svc-metric { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+
+/* ── Settings key-value ──────────────────────────────────── */
+.kv-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.kv-row:last-child { border-bottom: none; }
+.kv-key { color: var(--muted); min-width: 200px; }
+.kv-val { color: var(--text); font-family: "Consolas","Courier New",monospace; }
+
+/* ── Refresh indicator ───────────────────────────────────── */
+#refresh-ts { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+
+/* ── Report section ──────────────────────────────────────── */
+#final-report {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 14px; font-size: 13px; white-space: pre-wrap;
+  color: var(--muted); min-height: 60px;
+}
+
+/* ── Scrollable trace ────────────────────────────────────── */
+#trace-container { max-height: 380px; overflow-y: auto; }
+
+/* ── LTL list ────────────────────────────────────────────── */
+.ltl-item { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.ltl-item:last-child { border-bottom: none; }
+.ltl-id { font-weight: 600; color: var(--accent); margin-right: 8px; }
 </style>
 </head>
 <body>
 
-<!-- ── Top bar ────────────────────────────────────────────────────────────── -->
-<div class="topbar">
-  <h1>SENTINEL <span>/ Live Agent Monitor</span></h1>
-  <div style="display:flex;align-items:center;gap:10px">
-    <div style="font-size:11px;color:#8b949e" id="session-label">No active session</div>
-    <div class="status-pill" id="ws-pill">
-      <span class="dot idle" id="ws-dot"></span>
-      <span id="ws-label">Connecting…</span>
+<!-- ═══════════════════ SIDEBAR ════════════════════════ -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>SENTINEL OPS</h1>
+    <p>AXIOM-OPS Safety Gateway</p>
+  </div>
+  <nav>
+    <a href="#" class="nav-link active" data-page="overview">
+      <i class="nav-icon">&#9632;</i> Overview
+    </a>
+    <a href="#" class="nav-link" data-page="workspace">
+      <i class="nav-icon">&#9654;</i> Agent Workspace
+    </a>
+    <a href="#" class="nav-link" data-page="infrastructure">
+      <i class="nav-icon">&#9725;</i> Infrastructure
+    </a>
+    <a href="#" class="nav-link" data-page="incidents">
+      <i class="nav-icon">&#9888;</i> Incidents
+    </a>
+    <a href="#" class="nav-link" data-page="safety">
+      <i class="nav-icon">&#128737;</i> Safety Center
+    </a>
+    <a href="#" class="nav-link" data-page="audit">
+      <i class="nav-icon">&#9741;</i> Audit Logs
+    </a>
+    <a href="#" class="nav-link" data-page="tools">
+      <i class="nav-icon">&#9874;</i> Tools &amp; Policies
+    </a>
+    <a href="#" class="nav-link" data-page="settings">
+      <i class="nav-icon">&#9881;</i> Settings
+    </a>
+  </nav>
+</div>
+
+<!-- ═══════════════════ MAIN ════════════════════════════ -->
+<div id="main">
+
+<!-- ── 1. OVERVIEW ─────────────────────────────────────── -->
+<div class="page active" id="page-overview">
+  <h2>Overview</h2>
+  <div id="refresh-ts">Last refreshed: —</div>
+
+  <div class="health-strip" id="health-strip">
+    <div class="health-pill"><span class="dot" id="dot-backend"></span> Backend</div>
+    <div class="health-pill"><span class="dot" id="dot-gateway"></span> Gateway</div>
+    <div class="health-pill"><span class="dot" id="dot-llm"></span> LLM</div>
+    <div class="health-pill"><span class="dot" id="dot-db"></span> DB</div>
+  </div>
+
+  <div id="active-task-card" class="card" style="margin-bottom:14px">
+    <div class="card-title">Active Task</div>
+    <div id="active-task-content" style="color:var(--muted)">No active task</div>
+  </div>
+
+  <div class="grid grid-2" style="margin-bottom:14px">
+    <div>
+      <h3>Recent Decisions</h3>
+      <div class="tbl-wrap">
+        <table id="ov-decisions-tbl">
+          <thead><tr><th>Decision</th><th>Tool</th><th>Time</th></tr></thead>
+          <tbody id="ov-decisions-body"><tr><td colspan="3" class="empty">—</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h3>Recent Audit Events</h3>
+      <div class="tbl-wrap">
+        <table id="ov-audit-tbl">
+          <thead><tr><th>Action</th><th>Event</th><th>Time</th></tr></thead>
+          <tbody id="ov-audit-body"><tr><td colspan="3" class="empty">—</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- ── Main layout ────────────────────────────────────────────────────────── -->
-<div class="main">
+<!-- ── 2. AGENT WORKSPACE ──────────────────────────────── -->
+<div class="page" id="page-workspace">
+  <h2>Agent Workspace</h2>
 
-  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
-  <div class="sidebar">
+  <div class="card">
+    <h3>Task Composer</h3>
+    <div class="form-row">
+      <label class="form-label">Objective (natural language or blank to use scenario)</label>
+      <textarea id="ws-task" rows="3" placeholder="e.g. Deploy the staging environment and verify health..."></textarea>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Scenario</label>
+      <select id="ws-scenario">
+        <option value="normal_deploy">normal_deploy — safe staging deploy</option>
+        <option value="prompt_injection">prompt_injection — injected log attack</option>
+        <option value="privilege_escalation">privilege_escalation — IAM abuse</option>
+        <option value="goal_drift">goal_drift — drifting objectives</option>
+        <option value="emergent_harm">emergent_harm — DB firewall risk</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="ws-run-scripted">Run Scripted</button>
+      <button id="ws-run-llm" class="secondary">Run with LLM</button>
+      <button id="ws-stop" class="secondary" disabled>Stop</button>
+      <span id="ws-status" style="color:var(--muted);font-size:12px;margin-left:8px"></span>
+    </div>
+  </div>
 
-    <!-- Scenario launcher -->
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header"><h3>Run Demo Scenario</h3></div>
-      <div class="card-body">
-        <div class="scenario-grid">
-          <button class="scenario-btn safe" onclick="runScenario('normal_deploy')">
-            <span class="btn-icon">✅</span>
-            <div class="btn-text">
-              <div class="bn">Normal Deploy</div>
-              <div class="bd">Baseline — all actions safe</div>
-            </div>
-          </button>
-          <button class="scenario-btn danger" onclick="runScenario('prompt_injection')">
-            <span class="btn-icon">💉</span>
-            <div class="btn-text">
-              <div class="bn">Prompt Injection</div>
-              <div class="bd">Log file hijacks agent goal</div>
-            </div>
-          </button>
-          <button class="scenario-btn danger" onclick="runScenario('privilege_escalation')">
-            <span class="btn-icon">🔐</span>
-            <div class="btn-text">
-              <div class="bn">Privilege Escalation</div>
-              <div class="bd">Admin IAM grant attempt</div>
-            </div>
-          </button>
-          <button class="scenario-btn warn" onclick="runScenario('goal_drift')">
-            <span class="btn-icon">🎯</span>
-            <div class="btn-text">
-              <div class="bn">Goal Drift</div>
-              <div class="bd">Gradual semantic deviation</div>
-            </div>
-          </button>
-          <button class="scenario-btn purple" onclick="runScenario('emergent_harm')">
-            <span class="btn-icon">🕸</span>
-            <div class="btn-text">
-              <div class="bn">Emergent Harm</div>
-              <div class="bd">Multi-step causal attack chain</div>
-            </div>
-          </button>
-        </div>
-        <button class="reset-btn" onclick="resetSession()">⟳ Reset Session</button>
-        <!-- LLM mode toggle -->
-        <div id="llm-bar" style="margin-top:8px;padding:8px 10px;background:#0d2048;
-             border:1px solid #1f6feb;border-radius:6px;font-size:11px;display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;
-                      margin-bottom:4px">
-            <span style="color:#58a6ff;font-weight:700">LLM Agent Ready</span>
-            <span id="llm-model" style="color:#8b949e"></span>
-          </div>
-          <div style="color:#8b949e;margin-bottom:6px;font-size:10px">
-            Runs real AXIOM-OPS agent — tool calls intercepted live
-          </div>
-          <button id="llm-run-btn" class="reset-btn"
-                  style="background:#1f3048;border-color:#1f6feb;color:#58a6ff"
-                  onclick="runWithLLM()">
-            ▶ Run Selected Scenario with LLM
-          </button>
-        </div>
-        <div id="llm-missing" style="margin-top:8px;padding:6px 10px;background:#21262d;
-             border:1px solid #30363d;border-radius:6px;font-size:10px;
-             color:#484f58;display:none">
-          No LLM configured — using scripted demo mode.<br>
-          Set <code>OPENAI_API_KEY</code> in <code>.env</code> to enable real agent.
-        </div>
+  <div class="card">
+    <h3>Execution Trace</h3>
+    <div id="trace-container">
+      <div id="trace-body" class="empty">No execution running</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Final Report</h3>
+    <div id="final-report">—</div>
+  </div>
+</div>
+
+<!-- ── 3. INFRASTRUCTURE ───────────────────────────────── -->
+<div class="page" id="page-infrastructure">
+  <h2>Infrastructure <span class="sandbox-tag">sandbox — simulated</span></h2>
+  <p style="color:var(--muted);font-size:12px;margin-bottom:16px">
+    All service data is sandbox-simulated. No real infrastructure is connected.
+  </p>
+  <div class="grid grid-3" id="infra-grid">
+    <div class="svc-card"><div class="svc-name">Loading...</div></div>
+  </div>
+  <p id="infra-checked" style="color:var(--muted);font-size:11px;margin-top:10px"></p>
+</div>
+
+<!-- ── 4. INCIDENTS ────────────────────────────────────── -->
+<div class="page" id="page-incidents">
+  <h2>Incidents</h2>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <span style="color:var(--muted);font-size:13px">Persisted incident records</span>
+    <button id="inc-refresh-btn" class="secondary" style="padding:5px 12px;font-size:12px">Refresh</button>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Resource</th><th>Status</th><th>First Seen</th></tr></thead>
+      <tbody id="incidents-body"><tr><td colspan="6" class="empty">No incidents recorded</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── 5. SAFETY CENTER ────────────────────────────────── -->
+<div class="page" id="page-safety">
+  <h2>Safety Center</h2>
+
+  <div class="grid grid-4" style="margin-bottom:16px">
+    <div class="card"><div class="card-title">Total Evaluations</div><div class="card-val" id="sc-total">—</div></div>
+    <div class="card"><div class="card-title">ALLOW</div><div class="card-val" id="sc-allow" style="color:#3fb950">—</div></div>
+    <div class="card"><div class="card-title">WARN</div><div class="card-val" id="sc-warn" style="color:#d29922">—</div></div>
+    <div class="card"><div class="card-title">BLOCK</div><div class="card-val" id="sc-block" style="color:#f85149">—</div></div>
+  </div>
+
+  <div class="filter-row">
+    <button class="sc-filter active" data-f="">All</button>
+    <button class="sc-filter" data-f="ALLOW">ALLOW</button>
+    <button class="sc-filter" data-f="WARN">WARN</button>
+    <button class="sc-filter" data-f="BLOCK">BLOCK</button>
+  </div>
+
+  <div class="grid grid-2">
+    <div>
+      <h3>Decision Feed</h3>
+      <div class="tbl-wrap" style="max-height:380px;overflow-y:auto">
+        <table>
+          <thead><tr><th>Decision</th><th>Tool</th><th>Seq</th><th>Time</th></tr></thead>
+          <tbody id="sc-decisions-body"><tr><td colspan="4" class="empty">—</td></tr></tbody>
+        </table>
       </div>
     </div>
-
-    <!-- Session info -->
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header"><h3>Session Info</h3></div>
-      <div class="card-body" id="session-info">
-        <div class="empty"><div class="em">💤</div>Select a scenario to begin</div>
-      </div>
+    <div>
+      <h3>Detail</h3>
+      <div id="decision-detail">Click a row to see details</div>
     </div>
+  </div>
+</div>
 
-    <!-- PFA State Diagram -->
+<!-- ── 6. AUDIT LOGS ───────────────────────────────────── -->
+<div class="page" id="page-audit">
+  <h2>Audit Logs</h2>
+
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+    <div id="chain-status" class="health-pill">
+      <span class="dot" id="dot-chain"></span> Hash chain: checking…
+    </div>
+    <button id="audit-verify-btn" class="secondary" style="padding:5px 12px;font-size:12px">Verify Chain</button>
+  </div>
+
+  <div class="search-row">
+    <input type="text" id="audit-search" placeholder="Filter by action or event ID…">
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Action</th><th>Event ID</th><th>Task</th><th>Hash (short)</th><th>Time</th></tr></thead>
+      <tbody id="audit-body"><tr><td colspan="6" class="empty">—</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── 7. TOOLS & POLICIES ─────────────────────────────── -->
+<div class="page" id="page-tools">
+  <h2>Tools &amp; Policies</h2>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3>Tool Registry (14 tools)</h3>
+    <div class="tbl-wrap">
+      <table id="tools-tbl">
+        <thead><tr><th>Name</th><th>Tier</th><th>Description</th><th>Status</th></tr></thead>
+        <tbody id="tools-body"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
     <div class="card">
-      <div class="card-header">
-        <h3>PFA Behavioural State</h3>
-        <span style="font-size:11px;color:#8b949e" id="pfa-label">—</span>
-      </div>
-      <div class="card-body">
-        <div class="pfa-diagram" id="pfa-diagram">
-          <div class="pfa-node active" data-state="Idle">Idle</div>
-          <div class="pfa-node" data-state="Planning">Planning</div>
-          <div class="pfa-node" data-state="ReadOnly">ReadOnly</div>
-          <div class="pfa-node" data-state="WriteAccess">WriteAccess</div>
-          <div class="pfa-node" data-state="PrivilegedAccess">Privileged</div>
-          <div class="pfa-node" data-state="Anomalous">Anomalous</div>
-          <div class="pfa-node" data-state="Recovering">Recovering</div>
-          <div class="pfa-node" data-state="Terminated">Terminated</div>
-        </div>
-      </div>
+      <h3>PFA States</h3>
+      <table>
+        <thead><tr><th>State</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge badge-info">Idle</span></td><td style="color:var(--muted)">Session start — no tools used</td></tr>
+          <tr><td><span class="badge badge-info">ReadOnly</span></td><td style="color:var(--muted)">Tier-1 tools used</td></tr>
+          <tr><td><span class="badge badge-t2">WriteAccess</span></td><td style="color:var(--muted)">Tier-2 write/exec tools used</td></tr>
+          <tr><td><span class="badge badge-t3">PrivilegedAccess</span></td><td style="color:var(--muted)">Tier-3 privileged tools used</td></tr>
+          <tr><td><span class="badge badge-warn">Anomalous</span></td><td style="color:var(--muted)">LTL violation detected</td></tr>
+          <tr><td><span class="badge badge-info">Recovering</span></td><td style="color:var(--muted)">SENTINEL recovery mode</td></tr>
+          <tr><td><span class="badge badge-block">Terminated</span></td><td style="color:var(--muted)">Session forcibly terminated</td></tr>
+        </tbody>
+      </table>
     </div>
 
-  </div><!-- /sidebar -->
-
-  <!-- ── Main content ─────────────────────────────────────────────────────── -->
-  <div class="content">
-
-    <!-- Row 1: Overall risk banner + sub-score gauges -->
-    <div style="display:grid;grid-template-columns:220px 1fr;gap:12px">
-
-      <!-- Overall risk -->
-      <div class="card">
-        <div class="card-header"><h3>Overall Risk</h3></div>
-        <div class="card-body">
-          <div class="risk-banner safe" id="risk-banner">
-            <div>
-              <div class="rl">Risk Score</div>
-              <div class="rv" id="overall-val" style="color:#3fb950">0.00</div>
-            </div>
-            <span class="rb safe" id="risk-badge">SAFE</span>
-          </div>
-          <div class="stat-row">
-            <div class="stat"><div class="sv green" id="cnt-allow">0</div><div class="sl">Allowed</div></div>
-            <div class="stat"><div class="sv amber" id="cnt-warn">0</div><div class="sl">Warned</div></div>
-            <div class="stat"><div class="sv red" id="cnt-block">0</div><div class="sl">Blocked</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sub-score gauges -->
-      <div class="card">
-        <div class="card-header"><h3>Sub-Score Gauges</h3></div>
-        <div class="card-body">
-          <div class="gauge-row">
-            <div class="gauge-label"><span>Security</span><span class="val" id="sec-val">0.000</span></div>
-            <div class="gauge-track"><div class="gauge-fill" id="sec-fill" style="width:0%;background:#58a6ff"></div></div>
-          </div>
-          <div class="gauge-row">
-            <div class="gauge-label"><span>Safety</span><span class="val" id="saf-val">0.000</span></div>
-            <div class="gauge-track"><div class="gauge-fill" id="saf-fill" style="width:0%;background:#d29922"></div></div>
-          </div>
-          <div class="gauge-row">
-            <div class="gauge-label"><span>Reliability</span><span class="val" id="rel-val">0.000</span></div>
-            <div class="gauge-track"><div class="gauge-fill" id="rel-fill" style="width:0%;background:#3fb950"></div></div>
-          </div>
-          <div class="gauge-row" style="margin-top:10px">
-            <div class="gauge-label"><span><b>Intent Drift</b></span><span class="val" id="drift-val">0.000</span></div>
-            <div class="gauge-track" style="height:10px"><div class="gauge-fill" id="drift-fill" style="width:0%;background:#8957e5"></div></div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Row 2: Risk timeline chart -->
     <div class="card">
-      <div class="card-header">
-        <h3>Risk Score Timeline</h3>
-        <span style="display:flex;gap:12px;font-size:11px;color:#8b949e">
-          <span><span style="color:#f85149">—</span> Overall</span>
-          <span><span style="color:#58a6ff">—</span> Security</span>
-          <span><span style="color:#d29922">—</span> Safety</span>
-          <span><span style="color:#3fb950">—</span> Reliability</span>
-          <span><span style="color:#8957e5">—</span> Drift</span>
-        </span>
-      </div>
-      <div class="card-body" style="padding:8px 10px">
-        <canvas id="risk-chart"></canvas>
-      </div>
+      <h3>LTL Safety Properties</h3>
+      <div class="ltl-item"><span class="ltl-id">P01</span>No external data exfiltration from privileged sessions</div>
+      <div class="ltl-item"><span class="ltl-id">P02</span>Admin IAM grants always require prior approval</div>
+      <div class="ltl-item"><span class="ltl-id">P03</span>Secrets must not be logged or transmitted externally</div>
+      <div class="ltl-item"><span class="ltl-id">P04</span>Secret read followed by external shell call is blocked</div>
+      <div class="ltl-item"><span class="ltl-id">P05</span>Database ports must not be opened to 0.0.0.0/0</div>
+      <div class="ltl-item"><span class="ltl-id">P06</span>Firewall rules require service-scoped justification</div>
+      <div class="ltl-item"><span class="ltl-id">P07</span>Goal drift beyond 0.55 threshold triggers WARN</div>
+      <div class="ltl-item"><span class="ltl-id">P08</span>Three consecutive WARNs escalate to BLOCK</div>
     </div>
+  </div>
+</div>
 
-    <!-- Row 3: Action feed + Violations -->
-    <div style="display:grid;grid-template-columns:1fr 320px;gap:12px">
-
-      <!-- Action feed -->
-      <div class="card">
-        <div class="card-header">
-          <h3>Live Action Feed</h3>
-          <span style="font-size:11px;color:#8b949e" id="action-count">0 actions</span>
-        </div>
-        <div class="card-body" style="padding:8px">
-          <div id="action-feed">
-            <div class="empty"><div class="em">📡</div>Waiting for agent actions…</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Violations + alerts -->
-      <div class="card">
-        <div class="card-header">
-          <h3>Violations &amp; Alerts</h3>
-          <span class="sv red" id="viol-count" style="font-size:13px">0</span>
-        </div>
-        <div class="card-body" style="padding:8px;max-height:280px;overflow-y:auto" id="viol-log">
-          <div class="empty"><div class="em">🛡</div>No violations detected</div>
-        </div>
-      </div>
-
+<!-- ── 8. SETTINGS ─────────────────────────────────────── -->
+<div class="page" id="page-settings">
+  <h2>Settings</h2>
+  <div class="card">
+    <h3>Current Configuration</h3>
+    <div id="settings-kv">
+      <div class="kv-row"><span class="kv-key">LLM_PROVIDER</span><span class="kv-val" id="cfg-provider">—</span></div>
+      <div class="kv-row"><span class="kv-key">LLM model</span><span class="kv-val" id="cfg-model">—</span></div>
+      <div class="kv-row"><span class="kv-key">LLM ready</span><span class="kv-val" id="cfg-llm-ready">—</span></div>
+      <div class="kv-row"><span class="kv-key">DB connected</span><span class="kv-val" id="cfg-db">—</span></div>
+      <div class="kv-row"><span class="kv-key">RISK_WARN_THRESHOLD</span><span class="kv-val" id="cfg-warn">—</span></div>
+      <div class="kv-row"><span class="kv-key">RISK_BLOCK_THRESHOLD</span><span class="kv-val" id="cfg-block">—</span></div>
+      <div class="kv-row"><span class="kv-key">DRIFT_WARN_THRESHOLD</span><span class="kv-val" id="cfg-drift-warn">—</span></div>
+      <div class="kv-row"><span class="kv-key">DRIFT_BLOCK_THRESHOLD</span><span class="kv-val" id="cfg-drift-block">—</span></div>
     </div>
+  </div>
+  <div class="card">
+    <h3>How to Change Settings</h3>
+    <p style="color:var(--muted);font-size:13px;line-height:1.7">
+      Edit the <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">.env</code> file in the project root,
+      then restart the server:<br>
+      <code style="background:var(--surface2);padding:4px 8px;border-radius:4px;display:inline-block;margin-top:6px">
+        python -m uvicorn dashboard.server:app --host 0.0.0.0 --port 8888
+      </code>
+    </p>
+  </div>
+</div>
 
-    <!-- Row 4: KG Visualisation + FL Chart -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-
-      <!-- Knowledge Graph -->
-      <div class="card">
-        <div class="card-header">
-          <h3>Causal Knowledge Graph</h3>
-          <span style="font-size:11px;color:#8b949e" id="kg-stats-label">—</span>
-        </div>
-        <div class="card-body" style="padding:8px;min-height:180px">
-          <div id="kg-harm-bars" style="display:flex;flex-direction:column;gap:4px">
-            <div class="empty"><div class="em">🕸</div>Knowledge graph will populate as actions run</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- FL Improvement Chart -->
-      <div class="card">
-        <div class="card-header">
-          <h3>Federated Learning — F1 per Round</h3>
-          <span style="font-size:11px;color:#8b949e">5 clients · 10 rounds · DP enabled</span>
-        </div>
-        <div class="card-body" style="padding:8px">
-          <canvas id="fl-chart" style="width:100%;height:130px"></canvas>
-          <div id="fl-summary" style="margin-top:6px;font-size:11px;color:#8b949e;
-               display:flex;gap:16px;flex-wrap:wrap"></div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Row 5: Baseline Comparison Table -->
-    <div class="card">
-      <div class="card-header">
-        <h3>Evaluation vs Baselines</h3>
-        <span style="font-size:11px;color:#8b949e">SENTINEL · XGBoost · Rule-only · No-gateway</span>
-      </div>
-      <div class="card-body" style="padding:8px">
-        <div id="baseline-table">
-          <div class="empty" style="padding:12px">Loading baseline comparison…</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Row 6: Report Card Viewer -->
-    <div class="card" id="report-card-section" style="display:none">
-      <div class="card-header">
-        <h3>Block Decision Report Card</h3>
-        <button onclick="closeReportCard()" style="background:none;border:none;
-                color:#8b949e;cursor:pointer;font-size:14px">✕ Close</button>
-      </div>
-      <div style="padding:0">
-        <iframe id="report-card-frame" style="width:100%;height:520px;
-                border:none;background:#0d1117"></iframe>
-      </div>
-    </div>
-
-  </div><!-- /content -->
-</div><!-- /main -->
+</div><!-- end #main -->
 
 <script>
-// ══════════════════════════════════════════════════════════════════════════════
-//  SENTINEL Dashboard — Client Script
-// ══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  Navigation
+// ═══════════════════════════════════════════════════════
+const pages = document.querySelectorAll('.page');
+const navLinks = document.querySelectorAll('.nav-link');
 
-const BASE = window.location.origin;
-const WS_URL = `ws://${window.location.host}/ws`;
-
-// ── Chart state ───────────────────────────────────────────────────────────────
-const MAX_POINTS = 40;
-const chartData = {
-  labels:      [],
-  overall:     [],
-  security:    [],
-  safety:      [],
-  reliability: [],
-  drift:       [],
-};
-
-// ── Canvas chart ──────────────────────────────────────────────────────────────
-const canvas = document.getElementById('risk-chart');
-const ctx    = canvas.getContext('2d');
-
-function resizeCanvas() {
-  canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
-  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+function showPage(id) {
+  pages.forEach(p => p.classList.toggle('active', p.id === 'page-' + id));
+  navLinks.forEach(a => a.classList.toggle('active', a.dataset.page === id));
+  if (id === 'overview')       refreshOverview();
+  if (id === 'infrastructure') refreshInfra();
+  if (id === 'incidents')      refreshIncidents();
+  if (id === 'safety')         refreshSafety();
+  if (id === 'audit')          refreshAudit();
+  if (id === 'tools')          refreshTools();
+  if (id === 'settings')       refreshSettings();
 }
-window.addEventListener('resize', () => { resizeCanvas(); drawChart(); });
-resizeCanvas();
 
-function drawChart() {
-  const W = canvas.offsetWidth;
-  const H = canvas.offsetHeight;
-  ctx.clearRect(0, 0, W, H);
+navLinks.forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  showPage(a.dataset.page);
+}));
 
-  // Background zones
-  const zones = [
-    { y: 0,        h: H * 0.33, color: 'rgba(218,54,51,0.06)'  },  // critical
-    { y: H * 0.33, h: H * 0.34, color: 'rgba(210,153,34,0.06)' },  // warn
-    { y: H * 0.67, h: H * 0.33, color: 'rgba(35,134,54,0.06)'  },  // safe
-  ];
-  zones.forEach(z => {
-    ctx.fillStyle = z.color;
-    ctx.fillRect(0, z.y, W, z.h);
-  });
 
-  // Zone labels
-  ctx.font = '9px system-ui';
-  ctx.fillStyle = 'rgba(218,54,51,0.5)';
-  ctx.fillText('CRITICAL', 4, 12);
-  ctx.fillStyle = 'rgba(210,153,34,0.5)';
-  ctx.fillText('WARNING', 4, H * 0.33 + 12);
-  ctx.fillStyle = 'rgba(35,134,54,0.5)';
-  ctx.fillText('SAFE', 4, H * 0.67 + 12);
+// ═══════════════════════════════════════════════════════
+//  Utilities
+// ═══════════════════════════════════════════════════════
+function ts(t) {
+  if (!t) return '—';
+  return new Date(t * 1000).toLocaleTimeString();
+}
 
-  const n = chartData.labels.length;
-  if (n < 2) return;
+function decBadge(d) {
+  if (!d) return '<span class="badge badge-status">—</span>';
+  const cls = {ALLOW:'badge-allow', WARN:'badge-warn', BLOCK:'badge-block'}[d] || 'badge-status';
+  return `<span class="badge ${cls}">${d}</span>`;
+}
 
-  const series = [
-    { data: chartData.overall,     color: '#f85149', width: 2.5 },
-    { data: chartData.security,    color: '#58a6ff', width: 1.5 },
-    { data: chartData.safety,      color: '#d29922', width: 1.5 },
-    { data: chartData.reliability, color: '#3fb950', width: 1.5 },
-    { data: chartData.drift,       color: '#8957e5', width: 1.5 },
-  ];
+function tierBadge(t) {
+  const cls = {1:'badge-t1', 2:'badge-t2', 3:'badge-t3'}[t] || 'badge-status';
+  const lbl = {1:'T1', 2:'T2', 3:'T3'}[t] || '?';
+  return `<span class="badge ${cls}">${lbl}</span>`;
+}
 
-  series.forEach(s => {
-    ctx.beginPath();
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth   = s.width;
-    ctx.lineJoin    = 'round';
-    s.data.forEach((v, i) => {
-      const x = (i / (n - 1)) * W;
-      const y = H - v * H;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  });
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
 
-  // Event markers (BLOCK = red vertical line)
-  chartData.labels.forEach((lbl, i) => {
-    if (lbl && lbl.startsWith('B')) {
-      const x = (i / (n - 1)) * W;
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(248,81,73,0.5)';
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.moveTo(x, 0); ctx.lineTo(x, H);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#f85149';
-      ctx.font = '9px system-ui';
-      ctx.fillText('BLOCK', x + 2, 10);
+
+// ═══════════════════════════════════════════════════════
+//  Overview
+// ═══════════════════════════════════════════════════════
+async function refreshOverview() {
+  document.getElementById('refresh-ts').textContent =
+    'Last refreshed: ' + new Date().toLocaleTimeString();
+  try {
+    const h = await api('/api/health');
+    setDot('dot-backend', h.backend);
+    setDot('dot-gateway', h.gateway);
+    setDot('dot-llm',     h.llm);
+    setDot('dot-db',      h.db);
+  } catch(e) {
+    ['dot-backend','dot-gateway','dot-llm','dot-db'].forEach(id =>
+      setDot(id, false));
+  }
+
+  try {
+    const t = await api('/api/tasks/active');
+    const el = document.getElementById('active-task-content');
+    if (t.active) {
+      el.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <span><b>${t.task_id || '—'}</b></span>
+          <span class="badge badge-status">${t.status || '—'}</span>
+          <span class="badge badge-info">${t.scenario || '—'}</span>
+        </div>
+        <div style="margin-top:6px;color:var(--muted)">${(t.objective || '—').substring(0,120)}</div>
+        <div style="margin-top:6px;font-size:12px;color:var(--muted)">
+          Steps: ${(t.steps||[]).length}
+        </div>`;
+    } else {
+      el.textContent = 'No active task';
+      el.style.color = 'var(--muted)';
     }
-  });
+  } catch(e) { /* ignore */ }
+
+  try {
+    const d = await api('/api/decisions?limit=10');
+    const rows = d.decisions || [];
+    const tbody = document.getElementById('ov-decisions-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">—</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r =>
+        `<tr><td>${decBadge(r.decision)}</td><td>${r.tool||'—'}</td><td>${ts(r.timestamp)}</td></tr>`
+      ).join('');
+    }
+  } catch(e) { /* ignore */ }
+
+  try {
+    const a = await api('/api/audit?limit=5');
+    const rows = a.records || [];
+    const tbody = document.getElementById('ov-audit-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">—</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r =>
+        `<tr><td><code style="font-size:11px">${r.action||'—'}</code></td>
+         <td style="font-size:11px;color:var(--muted)">${(r.event_id||'—').substring(0,20)}</td>
+         <td>${ts(r.timestamp)}</td></tr>`
+      ).join('');
+    }
+  } catch(e) { /* ignore */ }
 }
 
-function pushChartPoint(scores, decision) {
-  const label = decision === 'BLOCK' ? 'B' : '';
-  chartData.labels.push(label);
-  chartData.overall.push(scores.overall || 0);
-  chartData.security.push(scores.security || 0);
-  chartData.safety.push(scores.safety || 0);
-  chartData.reliability.push(scores.reliability || 0);
-  chartData.drift.push(scores.drift || 0);
-  // Rolling window
-  ['labels','overall','security','safety','reliability','drift'].forEach(k => {
-    if (chartData[k].length > MAX_POINTS) chartData[k].shift();
-  });
-  drawChart();
+function setDot(id, ok) {
+  const d = document.getElementById(id);
+  if (!d) return;
+  d.className = 'dot ' + (ok ? 'ok' : 'fail');
 }
 
-// ── Gauge + banner helpers ────────────────────────────────────────────────────
-function riskColor(v) {
-  if (v >= 0.70) return '#f85149';
-  if (v >= 0.40) return '#d29922';
-  return '#3fb950';
-}
 
-function updateGauges(data) {
-  const sec  = data.security    || 0;
-  const saf  = data.safety      || 0;
-  const rel  = data.reliability || 0;
-  const ovr  = data.overall_risk || 0;
-  const drift = data.drift       || 0;
+// ═══════════════════════════════════════════════════════
+//  Agent Workspace
+// ═══════════════════════════════════════════════════════
+let wsConn = null;
+let wsRunning = false;
 
-  // Gauges
-  document.getElementById('sec-val').textContent  = sec.toFixed(3);
-  document.getElementById('saf-val').textContent  = saf.toFixed(3);
-  document.getElementById('rel-val').textContent  = rel.toFixed(3);
-  document.getElementById('drift-val').textContent = drift.toFixed(3);
-
-  const setBar = (id, val, color) => {
-    const el = document.getElementById(id);
-    el.style.width = (val * 100) + '%';
-    el.style.background = color;
+function wsConnect() {
+  if (wsConn && wsConn.readyState <= 1) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  wsConn = new WebSocket(`${proto}://${location.host}/ws`);
+  wsConn.onmessage = e => {
+    try { handleWsEvent(JSON.parse(e.data)); } catch(ex) { /* ignore */ }
   };
-  setBar('sec-fill',   sec,   riskColor(sec));
-  setBar('saf-fill',   saf,   riskColor(saf));
-  setBar('rel-fill',   rel,   riskColor(rel));
-  setBar('drift-fill', drift, drift >= 0.55 ? '#f85149' : drift >= 0.35 ? '#d29922' : '#8957e5');
+}
 
-  // Overall banner
-  const banner = document.getElementById('risk-banner');
-  const badge  = document.getElementById('risk-badge');
-  const oVal   = document.getElementById('overall-val');
-  oVal.textContent = ovr.toFixed(3);
-  if (ovr >= 0.70) {
-    banner.className = 'risk-banner critical';
-    badge.className  = 'rb critical'; badge.textContent = 'CRITICAL';
-    oVal.style.color = '#f85149';
-  } else if (ovr >= 0.40) {
-    banner.className = 'risk-banner warn';
-    badge.className  = 'rb warn';     badge.textContent = 'WARNING';
-    oVal.style.color = '#d29922';
-  } else {
-    banner.className = 'risk-banner safe';
-    badge.className  = 'rb safe';     badge.textContent = 'SAFE';
-    oVal.style.color = '#3fb950';
+function handleWsEvent(ev) {
+  const type = ev.type;
+  if (type === 'session_start') {
+    document.getElementById('trace-body').innerHTML = '';
+    document.getElementById('final-report').textContent = '—';
+    setWsRunning(true);
+  }
+  if (type === 'session_end') {
+    setWsRunning(false);
+    const s = ev.summary || {};
+    document.getElementById('final-report').textContent =
+      JSON.stringify(s, null, 2);
+  }
+  if (ev.decision || type === 'decision') {
+    appendTraceStep(ev);
+  }
+  if (type === 'agent_thought') {
+    appendThought(ev.content);
   }
 }
 
-// ── PFA diagram ────────────────────────────────────────────────────────────────
-function updatePFA(state) {
-  document.querySelectorAll('.pfa-node').forEach(n => n.classList.remove('active'));
-  const target = document.querySelector(`.pfa-node[data-state="${state}"]`);
-  if (target) target.classList.add('active');
-  document.getElementById('pfa-label').textContent = state || '—';
+function appendTraceStep(ev) {
+  const tb = document.getElementById('trace-body');
+  if (tb.classList.contains('empty')) { tb.innerHTML = ''; tb.classList.remove('empty'); }
+  const seq  = ev.seq  || '?';
+  const tool = ev.tool || ev.name || '?';
+  const dec  = ev.decision || '—';
+  const reason = (ev.reason || '').substring(0, 120);
+  const div = document.createElement('div');
+  div.className = 'step-row';
+  div.innerHTML = `
+    <span class="step-seq">${seq}</span>
+    <span class="step-info">
+      <span class="step-tool">${tool}</span>
+      ${decBadge(dec)}
+      ${reason ? `<div class="step-result">${reason}</div>` : ''}
+    </span>`;
+  tb.appendChild(div);
+  tb.scrollTop = tb.scrollHeight;
 }
 
-// ── Action feed ────────────────────────────────────────────────────────────────
-let actionCount = 0;
-
-function addActionItem(ev) {
-  const feed = document.getElementById('action-feed');
-  // Remove empty state
-  const empty = feed.querySelector('.empty');
-  if (empty) empty.remove();
-
-  actionCount++;
-  document.getElementById('action-count').textContent = actionCount + ' actions';
-
-  const el = document.createElement('div');
-  el.className = `action-item ${ev.decision}`;
-
-  const args = ev.args || {};
-  const argStr = Object.values(args).join(' ').substring(0, 40);
-  const scores = ev.scores || {};
-
-  el.innerHTML = `
-    <span class="ai-seq">#${ev.seq}</span>
-    <span class="ai-dec ${ev.decision}">${ev.decision}</span>
-    <span class="ai-tool">${ev.tool}</span>
-    <span class="ai-scores">
-      <span>sec=${(scores.security||0).toFixed(2)}</span>
-      <span>saf=${(scores.safety||0).toFixed(2)}</span>
-      <span>drift=${(scores.drift||0).toFixed(2)}</span>
-    </span>
-    <span class="ai-reason">${argStr}</span>
-  `;
-  feed.prepend(el);
-
-  // Keep max 30 items
-  while (feed.children.length > 30) feed.removeChild(feed.lastChild);
-
-  // Counters
-  document.getElementById('cnt-allow').textContent = parseInt(document.getElementById('cnt-allow').textContent||'0') + (ev.decision==='ALLOW' ? 1 : 0);
-  document.getElementById('cnt-warn').textContent  = parseInt(document.getElementById('cnt-warn').textContent||'0')  + (ev.decision==='WARN'  ? 1 : 0);
-  document.getElementById('cnt-block').textContent = parseInt(document.getElementById('cnt-block').textContent||'0') + (ev.decision==='BLOCK' ? 1 : 0);
+function appendThought(text) {
+  const tb = document.getElementById('trace-body');
+  if (tb.classList.contains('empty')) { tb.innerHTML = ''; tb.classList.remove('empty'); }
+  const div = document.createElement('div');
+  div.style.cssText = 'padding:4px 0;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)';
+  div.textContent = '[LLM] ' + text.substring(0, 200);
+  tb.appendChild(div);
+  tb.scrollTop = tb.scrollHeight;
 }
 
-// ── Violations log ────────────────────────────────────────────────────────────
-let violCount = 0;
+function setWsRunning(running) {
+  wsRunning = running;
+  document.getElementById('ws-run-scripted').disabled = running;
+  document.getElementById('ws-run-llm').disabled = running;
+  document.getElementById('ws-stop').disabled = !running;
+  document.getElementById('ws-status').textContent = running ? 'Running…' : 'Idle';
+}
 
-function addViolation(ev) {
-  if (!ev.ltl_violations || ev.ltl_violations.length === 0) return;
-  if (ev.decision !== 'BLOCK' && ev.decision !== 'WARN') return;
-
-  const log = document.getElementById('viol-log');
-  const empty = log.querySelector('.empty');
-  if (empty) empty.remove();
-
-  violCount++;
-  document.getElementById('viol-count').textContent = violCount;
-
-  ev.ltl_violations.forEach(prop => {
-    const el = document.createElement('div');
-    el.className = 'viol-item';
-    const t = new Date().toLocaleTimeString();
-    el.innerHTML = `
-      <div class="vt">LTL ${prop} — ${ev.decision} #${ev.seq}</div>
-      <div class="vd">${(ev.reason||'').substring(0,100)}</div>
-    `;
-    log.prepend(el);
-  });
-
-  // Also add block events without LTL as alerts
-  if (ev.decision === 'BLOCK' && (!ev.ltl_violations || ev.ltl_violations.length === 0)) {
-    const el = document.createElement('div');
-    el.className = 'alert-item block';
-    el.innerHTML = `
-      <span class="alert-time">${new Date().toLocaleTimeString()}</span>
-      <span class="alert-msg">BLOCK #${ev.seq}: ${ev.tool} — ${(ev.reason||'').substring(0,80)}</span>
-    `;
-    log.prepend(el);
+document.getElementById('ws-run-scripted').addEventListener('click', async () => {
+  const sc = document.getElementById('ws-scenario').value;
+  wsConnect();
+  document.getElementById('trace-body').innerHTML = '';
+  document.getElementById('trace-body').className = 'empty';
+  document.getElementById('final-report').textContent = '—';
+  setWsRunning(true);
+  try {
+    const r = await fetch(`/api/simulate/${sc}`, {method:'POST'});
+    const d = await r.json();
+    if (d.status === 'already_running') {
+      alert('A scenario is already running.');
+      setWsRunning(false);
+    }
+  } catch(e) {
+    setWsRunning(false);
+    alert('Error: ' + e.message);
   }
-}
+});
 
-// ── Session info panel ────────────────────────────────────────────────────────
-function updateSessionInfo(data) {
-  if (!data || !data.active) {
-    document.getElementById('session-info').innerHTML =
-      '<div class="empty"><div class="em">💤</div>Select a scenario to begin</div>';
-    document.getElementById('session-label').textContent = 'No active session';
-    return;
-  }
-
-  const ml = data.monitoring_level || 'normal';
-  document.getElementById('session-label').textContent =
-    `Session ${data.session_id} · ${data.scenario}`;
-
-  document.getElementById('session-info').innerHTML = `
-    <div class="info-row"><span class="ik">Session ID</span>
-      <span class="iv">${data.session_id}</span></div>
-    <div class="info-row"><span class="ik">Scenario</span>
-      <span class="iv">${data.scenario}</span></div>
-    <div class="info-row"><span class="ik">Duration</span>
-      <span class="iv">${data.duration_s}s</span></div>
-    <div class="info-row"><span class="ik">Total Actions</span>
-      <span class="iv">${data.total_actions || 0}</span></div>
-    <div class="info-row"><span class="ik">PFA State</span>
-      <span class="iv"><span class="pfa-badge pfa-${data.pfa_state}">${data.pfa_state}</span></span></div>
-    <div class="info-row"><span class="ik">Monitoring</span>
-      <span class="iv"><span class="monitor-badge monitor-${ml}">${ml.toUpperCase()}</span></span></div>
-    <div class="info-row"><span class="ik">Violations</span>
-      <span class="iv" style="color:${(data.violations||[]).length > 0 ? '#f85149':'#3fb950'}">
-        ${(data.violations||[]).length}</span></div>
-    <div class="info-row"><span class="ik">Task</span>
-      <span class="iv" title="${data.task}">${(data.task||'').substring(0,40)}…</span></div>
-  `;
-}
-
-// ── WebSocket ─────────────────────────────────────────────────────────────────
-let ws = null;
-let wsRetryDelay = 1000;
-
-function connectWS() {
-  ws = new WebSocket(WS_URL);
-
-  ws.onopen = () => {
-    wsRetryDelay = 1000;
-    const dot   = document.getElementById('ws-dot');
-    const label = document.getElementById('ws-label');
-    dot.className   = 'dot';
-    label.textContent = 'Connected';
-    // Send a ping every 20s to keep alive
-    setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 20000);
-  };
-
-  ws.onmessage = (evt) => {
-    let msg;
-    try { msg = JSON.parse(evt.data); } catch { return; }
-    handleMessage(msg);
-  };
-
-  ws.onclose = () => {
-    const dot   = document.getElementById('ws-dot');
-    const label = document.getElementById('ws-label');
-    dot.className   = 'dot idle';
-    label.textContent = 'Reconnecting…';
-    setTimeout(connectWS, wsRetryDelay);
-    wsRetryDelay = Math.min(wsRetryDelay * 1.5, 10000);
-  };
-
-  ws.onerror = () => ws.close();
-}
-
-function handleMessage(msg) {
-  // Session start / end events
-  if (msg.type === 'session_start') {
-    resetUI();
-    document.getElementById('session-label').textContent =
-      `Session ${msg.session_id} · ${msg.scenario}`;
-    return;
-  }
-  if (msg.type === 'session_end') {
-    updateSessionInfo({ active: true, ...msg.summary });
-    updatePFA(msg.summary.final_pfa_state);
-    return;
-  }
-
-  // Regular action event from interceptor
-  if (msg.tool !== undefined) {
-    addActionItem(msg);
-    addViolation(msg);
-    pushChartPoint(msg.scores || {}, msg.decision);
-    updatePFA(msg.pfa_state);
-    updateGauges({
-      security:    msg.scores?.security    || 0,
-      safety:      msg.scores?.safety      || 0,
-      reliability: msg.scores?.reliability || 0,
-      overall_risk: msg.scores?.overall    || 0,
-      drift:       msg.scores?.drift       || 0,
+document.getElementById('ws-run-llm').addEventListener('click', async () => {
+  const sc   = document.getElementById('ws-scenario').value;
+  const task = document.getElementById('ws-task').value.trim();
+  wsConnect();
+  document.getElementById('trace-body').innerHTML = '';
+  document.getElementById('trace-body').className = 'empty';
+  document.getElementById('final-report').textContent = '—';
+  setWsRunning(true);
+  try {
+    const body = task ? {scenario: sc, task} : {scenario: sc};
+    const r = await fetch('/api/agent/run', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
     });
-    // Refresh full session snapshot from REST (counters etc.)
-    fetchSession();
+    const d = await r.json();
+    if (d.status === 'error') {
+      alert('LLM error: ' + d.message);
+      setWsRunning(false);
+    } else if (d.status === 'already_running') {
+      alert('A run is already in progress.');
+      setWsRunning(false);
+    }
+  } catch(e) {
+    setWsRunning(false);
+    alert('Error: ' + e.message);
   }
-}
+});
 
-// ── REST polling for session snapshot ────────────────────────────────────────
-function fetchSession() {
-  fetch(`${BASE}/api/session`)
-    .then(r => r.json())
-    .then(data => {
-      updateSessionInfo(data);
-      if (data.active) {
-        updatePFA(data.pfa_state);
-        updateGauges(data);
-      }
-    })
-    .catch(() => {});
-}
+document.getElementById('ws-stop').addEventListener('click', async () => {
+  await fetch('/api/reset', {method:'POST'});
+  setWsRunning(false);
+});
 
-// Poll every 2 seconds as a fallback (in case a WS message was missed)
-setInterval(fetchSession, 2000);
+// Auto-connect WS so we receive live events regardless of active page
+wsConnect();
 
-// ── LLM Status ───────────────────────────────────────────────────────────────
-let _selectedScenario = null;
 
-function checkLLMStatus() {
-  fetch(`${BASE}/api/status`)
-    .then(r => r.json())
-    .then(d => {
-      const bar     = document.getElementById('llm-bar');
-      const missing = document.getElementById('llm-missing');
-      const model   = document.getElementById('llm-model');
-      const runBtn  = document.getElementById('llm-run-btn');
-      if (d.llm_ready) {
-        bar.style.display     = 'block';
-        missing.style.display = 'none';
-        model.textContent     = d.llm_model || '';
-        runBtn.disabled       = d.demo_running;
-        runBtn.textContent    = d.demo_running
-          ? '⏳ Running…'
-          : '▶ Run Selected Scenario with LLM';
-      } else {
-        bar.style.display     = 'none';
-        missing.style.display = 'block';
-      }
-    })
-    .catch(() => {});
-}
+// ═══════════════════════════════════════════════════════
+//  Infrastructure
+// ═══════════════════════════════════════════════════════
+const SERVICES = ['web-service','api-gateway','worker','postgres','vault'];
 
-// Poll LLM status every 3 s to keep the bar in sync
-setInterval(checkLLMStatus, 3000);
-
-// ── Scenario & reset controls ─────────────────────────────────────────────────
-function runScenario(name) {
-  _selectedScenario = name;
-  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
-  event.currentTarget && event.currentTarget.classList.add('active');
-
-  fetch(`${BASE}/api/simulate/${name}`, { method: 'POST' })
-    .then(r => r.json())
-    .then(d => {
-      if (d.status === 'already_running') {
-        alert('A scenario is already running. Reset first.');
-      }
-    })
-    .catch(() => alert('Dashboard server not reachable. Is it running?'));
-}
-
-function runWithLLM() {
-  if (!_selectedScenario) {
-    alert('Select a scenario first (click one of the buttons above).');
-    return;
+async function refreshInfra() {
+  const grid = document.getElementById('infra-grid');
+  const cards = [];
+  for (const svc of SERVICES) {
+    let metrics = null;
+    try {
+      const sess = await api('/api/session');
+      // metrics come from event bus / session, not directly from sandbox
+    } catch(e) { /* ignore */ }
+    cards.push(buildSvcCard(svc, null));
   }
-  const runBtn = document.getElementById('llm-run-btn');
-  runBtn.disabled    = true;
-  runBtn.textContent = '⏳ Running…';
-
-  fetch(`${BASE}/api/run/${_selectedScenario}`, { method: 'POST' })
-    .then(r => r.json())
-    .then(d => {
-      if (d.status === 'already_running') {
-        alert('A scenario is already running. Reset first.');
-        runBtn.disabled    = false;
-        runBtn.textContent = '▶ Run Selected Scenario with LLM';
-      } else if (d.status === 'error') {
-        alert('LLM run failed: ' + (d.message || 'unknown error'));
-        runBtn.disabled    = false;
-        runBtn.textContent = '▶ Run Selected Scenario with LLM';
-      }
-      // On success, button stays disabled until checkLLMStatus() sees demo_running=false
-    })
-    .catch(err => {
-      alert('Dashboard server not reachable. Is it running?');
-      runBtn.disabled    = false;
-      runBtn.textContent = '▶ Run Selected Scenario with LLM';
-    });
+  grid.innerHTML = cards.join('');
+  document.getElementById('infra-checked').textContent =
+    'Last checked: ' + new Date().toLocaleTimeString() + ' (sandbox — simulated data)';
 }
 
-function resetSession() {
-  fetch(`${BASE}/api/reset`, { method: 'POST' })
-    .then(() => resetUI())
-    .catch(() => {});
-}
+function buildSvcCard(name, metrics) {
+  const states = {
+    'web-service': 'running', 'api-gateway': 'running',
+    'worker': 'stopped', 'postgres': 'running', 'vault': 'running'
+  };
+  const status = states[name] || 'unknown';
+  const dotCls = status === 'running' ? 'ok' : 'fail';
+  const metricsHtml = metrics
+    ? Object.entries(metrics).map(([k,v]) =>
+        `<div class="svc-metric"><span>${k}</span><span>${v}</span></div>`
+      ).join('')
+    : '<div class="svc-metric"><span style="color:var(--muted)">metrics not loaded</span><span></span></div>';
 
-function resetUI() {
-  actionCount = 0; violCount = 0;
-  document.getElementById('action-count').textContent = '0 actions';
-  document.getElementById('viol-count').textContent   = '0';
-  document.getElementById('cnt-allow').textContent = '0';
-  document.getElementById('cnt-warn').textContent  = '0';
-  document.getElementById('cnt-block').textContent = '0';
-  document.getElementById('action-feed').innerHTML =
-    '<div class="empty"><div class="em">📡</div>Waiting for agent actions…</div>';
-  document.getElementById('viol-log').innerHTML =
-    '<div class="empty"><div class="em">🛡</div>No violations detected</div>';
-  document.getElementById('session-info').innerHTML =
-    '<div class="empty"><div class="em">💤</div>Select a scenario to begin</div>';
-  document.getElementById('session-label').textContent = 'No active session';
-  document.getElementById('pfa-label').textContent = '—';
-  updatePFA('Idle');
-  updateGauges({ security: 0, safety: 0, reliability: 0, overall_risk: 0, drift: 0 });
-  ['labels','overall','security','safety','reliability','drift'].forEach(k => chartData[k] = []);
-  drawChart();
-  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
-}
-
-// ── FL Chart (Phase 4.7) ──────────────────────────────────────────────────────
-const flCanvas = document.getElementById('fl-chart');
-const flCtx    = flCanvas ? flCanvas.getContext('2d') : null;
-
-function drawFLChart(rounds) {
-  if (!flCtx || !rounds || rounds.length === 0) return;
-  const W = flCanvas.offsetWidth, H = flCanvas.offsetHeight || 130;
-  flCanvas.width  = W * (window.devicePixelRatio || 1);
-  flCanvas.height = H * (window.devicePixelRatio || 1);
-  flCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-  flCtx.clearRect(0, 0, W, H);
-
-  // Background
-  flCtx.fillStyle = '#0d1117'; flCtx.fillRect(0, 0, W, H);
-
-  // Grid lines
-  [0.25, 0.5, 0.75, 1.0].forEach(v => {
-    const y = H - v * H;
-    flCtx.beginPath(); flCtx.strokeStyle = 'rgba(48,54,61,0.8)';
-    flCtx.lineWidth = 1; flCtx.moveTo(0, y); flCtx.lineTo(W, y); flCtx.stroke();
-    flCtx.fillStyle = '#484f58'; flCtx.font = '9px system-ui';
-    flCtx.fillText(v.toFixed(2), 2, y - 2);
-  });
-
-  const n = rounds.length;
-  const series = [
-    { key: 'f1',        color: '#58a6ff', label: 'F1',        width: 2.5 },
-    { key: 'precision', color: '#3fb950', label: 'Precision', width: 1.5 },
-    { key: 'recall',    color: '#d29922', label: 'Recall',    width: 1.5 },
-  ];
-  series.forEach(s => {
-    flCtx.beginPath();
-    flCtx.strokeStyle = s.color; flCtx.lineWidth = s.width; flCtx.lineJoin = 'round';
-    rounds.forEach((r, i) => {
-      const x = (i / Math.max(n-1,1)) * W;
-      const y = H - (r[s.key] || 0) * H;
-      i === 0 ? flCtx.moveTo(x, y) : flCtx.lineTo(x, y);
-    });
-    flCtx.stroke();
-  });
-
-  // X-axis round labels
-  flCtx.fillStyle = '#484f58'; flCtx.font = '9px system-ui'; flCtx.textAlign = 'center';
-  rounds.forEach((r, i) => {
-    const x = (i / Math.max(n-1,1)) * W;
-    flCtx.fillText('R' + r.round, x, H - 2);
-  });
-  flCtx.textAlign = 'left';
-}
-
-function loadFLData() {
-  fetch(`${BASE}/api/fl_metrics`)
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      if (!data) return;
-      drawFLChart(data.rounds || []);
-      const summary = document.getElementById('fl-summary');
-      if (summary) {
-        const final = data.final || {};
-        summary.innerHTML = `
-          <span>Clients: <b>${data.n_clients}</b></span>
-          <span>Rounds: <b>${data.n_rounds}</b></span>
-          <span>DP: <b style="color:#8957e5">${data.dp_enabled ? 'ON' : 'OFF'}</b></span>
-          <span>Final F1: <b style="color:#58a6ff">${(final.f1||0).toFixed(4)}</b></span>
-          <span>Recall: <b style="color:#d29922">${(final.recall||0).toFixed(4)}</b></span>
-          <span>cum-eps: <b>${(data.cumulative_epsilon||0).toFixed(2)}</b></span>`;
-      }
-    }).catch(() => {});
-}
-
-// ── Baseline Table (Phase 4.10) ───────────────────────────────────────────────
-function loadBaselineData() {
-  fetch(`${BASE}/api/baselines`)
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      if (!data) return;
-      const container = document.getElementById('baseline-table');
-      if (!container) return;
-      const configs = Object.entries(data);
-      const cols = ['detection_rate','false_positive_rate','precision','recall','f1'];
-      const colLabels = ['Detection Rate','FP Rate','Precision','Recall','F1'];
-      let html = `<table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr>
-          <th style="text-align:left;padding:6px 10px;color:#8b949e;
-                     border-bottom:1px solid #30363d;font-weight:700">Configuration</th>
-          ${colLabels.map(c => `<th style="text-align:right;padding:6px 10px;color:#8b949e;
-            border-bottom:1px solid #30363d;font-weight:700">${c}</th>`).join('')}
-        </tr></thead><tbody>`;
-      configs.forEach(([name, stats], i) => {
-        const bg = i % 2 ? '#21262d' : 'transparent';
-        const nameColor = name === 'xgboost_only' ? '#58a6ff' :
-                          name === 'sentinel_full' ? '#3fb950' :
-                          name === 'rule_only'     ? '#d29922' : '#8b949e';
-        html += `<tr style="background:${bg}">
-          <td style="padding:6px 10px;color:${nameColor};font-weight:700">${name}</td>
-          ${cols.map(c => {
-            const v = stats[c] || 0;
-            const color = c==='false_positive_rate' ? (v>0.1?'#f85149':v>0.02?'#d29922':'#3fb950')
-                        : (v>=0.8?'#3fb950':v>=0.4?'#d29922':'#8b949e');
-            return `<td style="text-align:right;padding:6px 10px;
-                               color:${color};font-weight:700">${v.toFixed(4)}</td>`;
-          }).join('')}
-        </tr>`;
-      });
-      html += '</tbody></table>';
-      container.innerHTML = html;
-    }).catch(() => {});
-}
-
-// ── KG Harm Bars (Phase 4.5) ──────────────────────────────────────────────────
-function updateKGPanel(kgStats) {
-  if (!kgStats) return;
-  const label = document.getElementById('kg-stats-label');
-  if (label) label.textContent =
-    `${kgStats.nodes || 0} nodes · ${kgStats.edges || 0} edges`;
-
-  const harmScores = kgStats.harm_scores || {};
-  const container  = document.getElementById('kg-harm-bars');
-  if (!container) return;
-
-  const entries = Object.entries(harmScores).filter(([,v]) => v > 0);
-  if (entries.length === 0) return;
-  entries.sort((a, b) => b[1] - a[1]);
-
-  container.innerHTML = entries.map(([name, score]) => {
-    const pct   = Math.round(score * 100);
-    const color = score >= 0.7 ? '#f85149' : score >= 0.4 ? '#d29922' : '#8957e5';
-    return `<div style="margin:3px 0">
-      <div style="display:flex;justify-content:space-between;
-                  font-size:11px;margin-bottom:2px">
-        <span style="color:#c9b8ff">${name}</span>
-        <span style="color:${color};font-weight:700">${score.toFixed(3)}</span>
+  return `
+    <div class="svc-card">
+      <div class="svc-name">${name}</div>
+      <div class="svc-status">
+        <span class="dot ${dotCls}" style="display:inline-block;margin-right:6px"></span>${status}
+        <span class="sandbox-tag">sandbox</span>
       </div>
-      <div style="height:6px;background:#21262d;border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:${color};
-                    border-radius:3px;transition:width .4s"></div>
-      </div>
+      ${metricsHtml}
     </div>`;
-  }).join('');
 }
 
-// ── Report Card Viewer (Phase 4.6) ────────────────────────────────────────────
-function openReportCard(eventId) {
-  const section = document.getElementById('report-card-section');
-  const frame   = document.getElementById('report-card-frame');
-  if (!section || !frame) return;
-  frame.src = `${BASE}/api/report/${eventId}`;
-  section.style.display = 'block';
-  section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
 
-function closeReportCard() {
-  const section = document.getElementById('report-card-section');
-  const frame   = document.getElementById('report-card-frame');
-  if (section) section.style.display = 'none';
-  if (frame)   frame.src = 'about:blank';
-}
-
-// ── Patch addActionItem to add "View Report" link on BLOCK/WARN ───────────────
-const _origAddActionItem = addActionItem;
-addActionItem = function(ev) {
-  _origAddActionItem(ev);
-  if (ev.decision === 'BLOCK' || ev.decision === 'WARN') {
-    const feed  = document.getElementById('action-feed');
-    const items = feed.querySelectorAll('.action-item');
-    if (items.length > 0) {
-      const first = items[0];
-      const link  = document.createElement('a');
-      link.href = '#';
-      link.style.cssText = 'font-size:10px;color:#8957e5;margin-left:6px;' +
-                           'text-decoration:none;flex-shrink:0';
-      link.textContent = '[Report]';
-      link.onclick = e => { e.preventDefault(); openReportCard(ev.event_id); };
-      first.appendChild(link);
+// ═══════════════════════════════════════════════════════
+//  Incidents
+// ═══════════════════════════════════════════════════════
+async function refreshIncidents() {
+  try {
+    const d = await api('/api/incidents');
+    const rows = d.incidents || [];
+    const tbody = document.getElementById('incidents-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No incidents recorded</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.id}</td>
+          <td><span class="badge ${r.severity === 'high' ? 'badge-block' : r.severity === 'medium' ? 'badge-warn' : 'badge-info'}">${r.severity}</span></td>
+          <td>${r.title}</td>
+          <td style="color:var(--muted)">${r.resource||'—'}</td>
+          <td><span class="badge badge-status">${r.status}</span></td>
+          <td>${ts(r.first_seen)}</td>
+        </tr>`).join('');
     }
+  } catch(e) {
+    document.getElementById('incidents-body').innerHTML =
+      '<tr><td colspan="6" class="empty">Not connected</td></tr>';
   }
-  // Update KG panel from event kg_stats
-  if (ev.kg_stats) updateKGPanel(ev.kg_stats);
-};
+}
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-connectWS();
-fetchSession();
-drawChart();
-loadFLData();
-loadBaselineData();
-checkLLMStatus();
+document.getElementById('inc-refresh-btn').addEventListener('click', refreshIncidents);
+
+
+// ═══════════════════════════════════════════════════════
+//  Safety Center
+// ═══════════════════════════════════════════════════════
+let _scFilter = '';
+let _scRows = [];
+
+async function refreshSafety() {
+  try {
+    const d = await api('/api/decisions?limit=500');
+    _scRows = d.decisions || [];
+    updateScStats();
+    renderScTable();
+  } catch(e) {
+    document.getElementById('sc-decisions-body').innerHTML =
+      '<tr><td colspan="4" class="empty">Not connected</td></tr>';
+  }
+}
+
+function updateScStats() {
+  const total = _scRows.length;
+  const allow = _scRows.filter(r => r.decision === 'ALLOW').length;
+  const warn  = _scRows.filter(r => r.decision === 'WARN').length;
+  const block = _scRows.filter(r => r.decision === 'BLOCK').length;
+  document.getElementById('sc-total').textContent = total || '—';
+  document.getElementById('sc-allow').textContent = allow || (total ? 0 : '—');
+  document.getElementById('sc-warn').textContent  = warn  || (total ? 0 : '—');
+  document.getElementById('sc-block').textContent = block || (total ? 0 : '—');
+}
+
+function renderScTable() {
+  const filtered = _scFilter
+    ? _scRows.filter(r => r.decision === _scFilter)
+    : _scRows;
+  const tbody = document.getElementById('sc-decisions-body');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">No decisions found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.slice(0, 200).map((r,i) => `
+    <tr style="cursor:pointer" onclick="showDecDetail(${i})">
+      <td>${decBadge(r.decision)}</td>
+      <td>${r.tool||'—'}</td>
+      <td>${r.seq||'—'}</td>
+      <td>${ts(r.timestamp)}</td>
+    </tr>`).join('');
+  // store filtered for detail lookup
+  window._filteredRows = filtered;
+}
+
+function showDecDetail(i) {
+  const r = (window._filteredRows || _scRows)[i];
+  if (!r) return;
+  const scores = typeof r.scores_json === 'object' ? r.scores_json : {};
+  document.getElementById('decision-detail').textContent =
+    `Decision : ${r.decision}
+Tool     : ${r.tool}
+Seq      : ${r.seq}
+PFA State: ${r.pfa_state||'—'}
+Drift    : ${r.drift != null ? r.drift.toFixed(3) : '—'}
+Session  : ${r.session_id||'—'}
+Task ID  : ${r.task_id||'—'}
+Reason   : ${r.reason||'—'}
+Scores   : ${JSON.stringify(scores, null, 2)}
+LTL      : ${JSON.stringify(r.ltl_violations_json||[], null, 2)}
+Time     : ${ts(r.timestamp)}`;
+}
+
+document.querySelectorAll('.sc-filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sc-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    _scFilter = btn.dataset.f;
+    renderScTable();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════
+//  Audit Logs
+// ═══════════════════════════════════════════════════════
+let _auditRows = [];
+
+async function refreshAudit() {
+  await verifyChain();
+  try {
+    const d = await api('/api/audit?limit=200');
+    _auditRows = d.records || [];
+    renderAuditTable(_auditRows);
+  } catch(e) {
+    document.getElementById('audit-body').innerHTML =
+      '<tr><td colspan="6" class="empty">Not connected</td></tr>';
+  }
+}
+
+async function verifyChain() {
+  try {
+    const v = await api('/api/audit/verify');
+    const dot = document.getElementById('dot-chain');
+    const label = document.getElementById('chain-status');
+    if (v.valid === null) {
+      dot.className = 'dot warn';
+      label.innerHTML = '<span class="dot warn"></span> Hash chain: DB unavailable';
+    } else if (v.valid) {
+      dot.className = 'dot ok';
+      label.innerHTML = `<span class="dot ok"></span> Hash chain: intact (${v.records} records)`;
+    } else {
+      dot.className = 'dot fail';
+      label.innerHTML = `<span class="dot fail"></span> Hash chain: BROKEN — ${v.message}`;
+    }
+  } catch(e) {
+    document.getElementById('dot-chain').className = 'dot fail';
+  }
+}
+
+function renderAuditTable(rows) {
+  const tbody = document.getElementById('audit-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No audit records</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.id}</td>
+      <td><code style="font-size:11px">${r.action||'—'}</code></td>
+      <td style="font-size:11px;color:var(--muted)">${(r.event_id||'—').substring(0,24)}</td>
+      <td style="font-size:11px;color:var(--muted)">${(r.task_id||'—').substring(0,16)}</td>
+      <td style="font-family:monospace;font-size:11px;color:var(--muted)">${(r.curr_hash||'—').substring(0,12)}…</td>
+      <td>${ts(r.timestamp)}</td>
+    </tr>`).join('');
+}
+
+document.getElementById('audit-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  const filtered = _auditRows.filter(r =>
+    (r.action||'').toLowerCase().includes(q) ||
+    (r.event_id||'').toLowerCase().includes(q) ||
+    (r.task_id||'').toLowerCase().includes(q)
+  );
+  renderAuditTable(filtered);
+});
+
+document.getElementById('audit-verify-btn').addEventListener('click', verifyChain);
+
+
+// ═══════════════════════════════════════════════════════
+//  Tools & Policies
+// ═══════════════════════════════════════════════════════
+async function refreshTools() {
+  try {
+    const d = await api('/api/tools');
+    const tools = d.tools || [];
+    const tbody = document.getElementById('tools-body');
+    if (!tools.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Not connected</td></tr>';
+      return;
+    }
+    tbody.innerHTML = tools.map(t => `
+      <tr>
+        <td><code style="font-size:12px">${t.name}</code></td>
+        <td>${tierBadge(t.tier)} <span style="font-size:11px;color:var(--muted);margin-left:4px">${t.tier_label}</span></td>
+        <td style="color:var(--muted)">${t.description}</td>
+        <td><span class="badge badge-allow" style="font-size:10px">${t.status}</span></td>
+      </tr>`).join('');
+  } catch(e) {
+    document.getElementById('tools-body').innerHTML =
+      '<tr><td colspan="4" class="empty">Not connected</td></tr>';
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  Settings
+// ═══════════════════════════════════════════════════════
+async function refreshSettings() {
+  try {
+    const d = await api('/api/status');
+    document.getElementById('cfg-provider').textContent    = d.llm_provider || '—';
+    document.getElementById('cfg-model').textContent       = d.llm_model    || '—';
+    document.getElementById('cfg-llm-ready').textContent   = d.llm_ready    ? 'Yes' : 'No';
+    document.getElementById('cfg-db').textContent          = d.db_connected ? 'Yes' : 'No';
+    document.getElementById('cfg-warn').textContent        = d.risk_warn_threshold  != null ? d.risk_warn_threshold  : '—';
+    document.getElementById('cfg-block').textContent       = d.risk_block_threshold != null ? d.risk_block_threshold : '—';
+    document.getElementById('cfg-drift-warn').textContent  = d.drift_warn_threshold  != null ? d.drift_warn_threshold  : '—';
+    document.getElementById('cfg-drift-block').textContent = d.drift_block_threshold != null ? d.drift_block_threshold : '—';
+  } catch(e) {
+    document.getElementById('cfg-provider').textContent = 'Not connected';
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  Auto-refresh Overview every 8s
+// ═══════════════════════════════════════════════════════
+refreshOverview();
+setInterval(() => {
+  const active = document.querySelector('.page.active');
+  if (active && active.id === 'page-overview') refreshOverview();
+}, 8000);
 </script>
 </body>
 </html>

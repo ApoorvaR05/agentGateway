@@ -43,7 +43,14 @@ def get_events(last_n: int | None = None) -> list[dict]:
     return events[-last_n:] if last_n else events
 
 
+def clear_events_only() -> None:
+    """Clear the event ring buffer only — subscribers are preserved."""
+    with _lock:
+        _events.clear()
+
+
 def clear() -> None:
+    """Clear both events and subscribers (used by /api/reset endpoint)."""
     with _lock:
         _events.clear()
         _subscribers.clear()

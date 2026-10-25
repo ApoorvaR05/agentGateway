@@ -11,6 +11,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+# Valid task statuses (state machine)
+TASK_STATUSES = ("queued", "planning", "running", "verifying", "completed",
+                 "failed", "blocked")
+
 
 @dataclass
 class ActionRecord:
@@ -24,17 +28,36 @@ class ActionRecord:
     timestamp:   float = field(default_factory=time.time)
 
 
+@dataclass
+class StepRecord:
+    """One structured step in the agent execution trace."""
+    seq:       int
+    tool:      str
+    args:      dict[str, Any]
+    decision:  str   # ALLOW | WARN | BLOCK
+    result:    str   = ""
+    timestamp: float = field(default_factory=time.time)
+
+
 class Session:
     """
     Holds all runtime state for one AXIOM-OPS agent run.
     Passed by reference to every SENTINEL subsystem.
     """
 
-    def __init__(self, task: str, scenario: str = "unknown"):
+    def __init__(self, task: str, scenario: str = "unknown",
+                 task_id: str | None = None):
         self.session_id:    str  = str(uuid.uuid4())[:8]
+        self.task_id:       str  = task_id or str(uuid.uuid4())
         self.task:          str  = task
         self.scenario:      str  = scenario
         self.started_at:    float = time.time()
+
+        # Task status state machine
+        self.status:        str  = "queued"   # queued|planning|running|verifying|completed|failed|blocked
+
+        # Structured execution trace
+        self.steps:         list[StepRecord] = []
 
         # Action history
         self.actions:       list[ActionRecord] = []
@@ -63,6 +86,22 @@ class Session:
         self.revocations:    list[dict] = []
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def set_status(self, status: str) -> None:
+        """Advance the task status state machine."""
+        if status in TASK_STATUSES:
+            self.status = status
+
+    def add_step(self, tool: str, args: dict, decision: str,
+                 result: str = "") -> None:
+        """Append a structured step to the execution trace."""
+        self.steps.append(StepRecord(
+            seq=len(self.steps) + 1,
+            tool=tool,
+            args=args,
+            decision=decision,
+            result=result,
+        ))
 
     def next_seq(self) -> int:
         self.action_seq += 1
@@ -111,8 +150,10 @@ class Session:
         elapsed = time.time() - self.started_at
         return {
             "session_id":   self.session_id,
+            "task_id":      self.task_id,
             "scenario":     self.scenario,
             "task":         self.task[:80],
+            "status":       self.status,
             "duration_s":   round(elapsed, 2),
             "total_actions": len(self.actions),
             "allowed":       self.allowed_count,
@@ -123,6 +164,16 @@ class Session:
             "final_pfa_state": self.pfa_state,
             "overall_risk":  round(self.overall_risk, 3),
             "monitoring_level": self.monitoring_level,
+            "steps": [
+                {
+                    "seq":      s.seq,
+                    "tool":     s.tool,
+                    "decision": s.decision,
+                    "result":   s.result[:120] if s.result else "",
+                    "timestamp": s.timestamp,
+                }
+                for s in self.steps
+            ],
         }
 
 

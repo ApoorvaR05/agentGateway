@@ -20,7 +20,7 @@ REPORTS_DIR.mkdir(exist_ok=True)
 # ── LLM ──────────────────────────────────────────────────────────────────────
 LLM_PROVIDER  = os.getenv("LLM_PROVIDER", "openai")   # "openai" | "ollama"
 OPENAI_MODEL  = os.getenv("OPENAI_MODEL",  "gpt-4o")
-OLLAMA_MODEL  = os.getenv("OLLAMA_MODEL",  "llama3")
+OLLAMA_MODEL  = os.getenv("OLLAMA_MODEL",  "llama3.2")
 OLLAMA_BASE   = os.getenv("OLLAMA_BASE",   "http://localhost:11434")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
