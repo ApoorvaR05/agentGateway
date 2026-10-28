@@ -56,8 +56,23 @@ app.add_middleware(
 _ws_clients: list[WebSocket] = []
 _ws_lock = asyncio.Lock()
 
+# Keep the FastAPI event loop so background threads can dispatch to the browser
+_app_loop: asyncio.AbstractEventLoop | None = None
+
 # ── Global "current demo session" state ───────────────────────────────────────
 _demo_running = False
+
+
+@app.on_event("startup")
+async def _startup_event() -> None:
+    global _app_loop
+    _app_loop = asyncio.get_running_loop()
+
+
+@app.on_event("shutdown")
+async def _shutdown_event() -> None:
+    global _app_loop
+    _app_loop = None
 
 
 # ── WebSocket broadcast helper ────────────────────────────────────────────────
@@ -75,12 +90,26 @@ async def _broadcast(data: dict) -> None:
 
 def _sync_broadcast(data: dict) -> None:
     """Thread-safe bridge: call from non-async code (event_bus subscriber)."""
+    loop = _app_loop
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+    if not loop.is_running():
+        return
+
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(_broadcast(data), loop)
+        current_loop = asyncio.get_running_loop()
     except RuntimeError:
-        pass
+        current_loop = None
+
+    if current_loop is loop:
+        loop.create_task(_broadcast(data))
+        return
+
+    asyncio.run_coroutine_threadsafe(_broadcast(data), loop)
 
 
 # ── Subscribe to event bus so every SENTINEL decision reaches the browser ─────
