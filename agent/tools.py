@@ -29,6 +29,9 @@ def _intercept(tool_name: str, args: dict) -> tuple[bool, str]:
     Returns (should_execute: bool, block_reason: str).
     """
     interceptor = _get_interceptor()
+    from agent.session import SessionCancelled, get_session
+    if get_session().cancel_event.is_set():
+        raise SessionCancelled("Agent run stopped by user.")
     decision = interceptor.evaluate(tool_name=tool_name, args=args)
     if decision["action"] == "BLOCK":
         return False, decision["reason"]

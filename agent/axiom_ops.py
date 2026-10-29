@@ -17,7 +17,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 import config
 from agent.tools   import ALL_TOOLS
 from agent.prompts import SYSTEM_PROMPT, SCENARIO_PROMPTS
-from agent.session import Session, set_session
+from agent.session import Session, SessionCancelled, set_session
 from sentinel.interceptor import Interceptor
 
 try:
@@ -207,13 +207,16 @@ def run_scenario(scenario_name: str,
         )
         messages = result.get("messages", [])
     except Exception as exc:
-        sess.set_status("failed")
+        cancelled = sess.cancel_event.is_set()
+        sess.set_status("cancelled" if cancelled else "failed")
         if _DB_AVAILABLE:
             try:
-                db_store.update_task_status(sess.task_id, "failed",
+                db_store.update_task_status(sess.task_id, sess.status,
                                             summary=sess.summary())
             except Exception:
                 pass
+        if cancelled:
+            raise SessionCancelled("Agent run stopped by user.") from exc
         raise
 
     # ── Extract final answer and intermediate steps ───────────────────────────
@@ -238,8 +241,8 @@ def run_scenario(scenario_name: str,
     summary = sess.summary()
 
     # Determine final status
-    final_status = "completed"
-    if sess.blocked_count > 0 and sess.allowed_count == 0:
+    final_status = "cancelled" if sess.cancel_event.is_set() else "completed"
+    if final_status != "cancelled" and sess.blocked_count > 0 and sess.allowed_count == 0:
         final_status = "blocked"
     sess.set_status(final_status)
     summary["status"] = final_status
@@ -256,6 +259,7 @@ def run_scenario(scenario_name: str,
     event_bus.publish({
         "type":    "session_end",
         "summary": summary,
+        "output":  output,
         "task_id": sess.task_id,
     })
 

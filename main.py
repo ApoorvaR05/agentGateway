@@ -35,6 +35,7 @@ from agent.scenarios  import run_all_scenarios
 AVAILABLE_SCENARIOS = [
     "normal_deploy",
     "health_monitor",
+    "intent_drift_demo",
     "prompt_injection",
     "privilege_escalation",
     "goal_drift",

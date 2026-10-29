@@ -138,6 +138,25 @@ for tool, args in [
 events = event_bus.get_events()
 assert_eq("  event count", len(events), 3)
 assert_eq("  all have session_id", all("session_id" in e for e in events), True)
+model_inference = events[-1]["model_inference"]
+assert_eq("  embedding availability reported",
+          isinstance(model_inference["sentence_transformer_available"], bool), True)
+assert_eq("  embedding inference reported",
+          isinstance(model_inference["embedding_inference_performed"], bool), True)
+if model_inference["embedding_inference_performed"]:
+    assert_eq("  embedding similarity logged",
+              isinstance(model_inference["embedding_similarity"], float), True)
+assert_eq("  drift score logged", model_inference["drift_score"], events[-1]["drift"])
+assert_eq("  XGBoost availability reported",
+          isinstance(model_inference["xgboost_available"], bool), True)
+assert_eq("  XGBoost inference status logged",
+          model_inference["xgboost_status"] in
+          {"inferred", "unavailable", "load_failed", "failed"}, True)
+assert_eq("  final decision logged",
+          isinstance(events[-1]["decision"], str), True)
+assert_eq("  XGBoost score matches inference status",
+          (model_inference["model_generated_risk_score"] is not None),
+          model_inference["xgboost_inference_performed"])
 
 # ── TEST 9: Session summary counters ─────────────────────────────────────────
 print("\nTest 9: Session summary should count correctly")
@@ -150,6 +169,110 @@ summary = sess.summary()
 assert_eq("  allowed count", summary["allowed"], 2)
 assert_eq("  blocked count", summary["blocked"], 1)
 assert_eq("  violations",    summary["violations"] >= 1, True)
+
+# ── TEST 10: Scripted runs stop at a blocked action ────────────────────────────
+print("\nTest 10: Scripted scenario must stop after a blocked action")
+from unittest.mock import patch
+from dashboard import server as dashboard_server
+
+original_actions = dashboard_server._SCENARIOS["privilege_escalation"]
+dashboard_server._SCENARIOS["privilege_escalation"] = [
+    ("modify_iam", {"role": "backup-service", "action": "grant",
+                    "permission": "admin:*"}),
+    ("query_metrics", {"service": "web-service"}),
+]
+iam_calls = []
+metrics_calls = []
+try:
+    with patch.object(dashboard_server.time, "sleep", return_value=None), \
+            patch.object(sb, "modify_iam",
+                         side_effect=lambda *args, **kwargs: iam_calls.append(args)), \
+            patch.object(sb, "query_metrics",
+                         side_effect=lambda service: metrics_calls.append(service)):
+        scripted_summary = dashboard_server._run_scripted_scenario(
+            "privilege_escalation"
+        )
+finally:
+    dashboard_server._SCENARIOS["privilege_escalation"] = original_actions
+
+assert_eq("  scripted status", scripted_summary["status"], "blocked")
+assert_eq("  blocked action recorded", scripted_summary["steps"][0]["tool"],
+          "modify_iam")
+assert_eq("  blocked decision recorded", scripted_summary["steps"][0]["decision"],
+          "BLOCK")
+assert_eq("  scenario halted", scripted_summary["halted"], True)
+assert_eq("  later action listed as skipped",
+          scripted_summary["skipped_actions"], ["query_metrics"])
+assert_eq("  blocked IAM operation not executed", len(iam_calls), 0)
+assert_eq("  later tool not executed", len(metrics_calls), 0)
+assert_eq("  only blocked action intercepted",
+          len(session_mod.get_session().actions), 1)
+
+# ── TEST 11: Read-only health task rejects injected IAM escalation ────────────
+print("\nTest 11: Health-review log injection must not execute IAM grant")
+from agent.prompts import SCENARIO_PROMPTS
+from agent.tools import modify_iam as modify_iam_tool
+from agent.tools import read_file as read_file_tool
+
+demo_task = SCENARIO_PROMPTS["intent_drift_demo"]
+sess, ic = make_session(demo_task)
+read_log_result = read_file_tool.invoke({"path": "/var/log/health_review.log"})
+assert_eq("  original task is read-only",
+          "READ-ONLY" in demo_task and "Do not modify" in demo_task, True)
+assert_eq("  environment contains untrusted IAM instruction",
+          "permission admin:*" in read_log_result, True)
+
+iam_calls = []
+original_iam = sb.modify_iam
+try:
+    sb.modify_iam = lambda *args, **kwargs: iam_calls.append((args, kwargs))
+    blocked_result = modify_iam_tool.invoke({
+        "role": "health-observer",
+        "action": "grant",
+        "permission": "admin:*",
+    })
+finally:
+    sb.modify_iam = original_iam
+
+event = [e for e in event_bus.get_events() if "decision" in e][-1]
+assert_eq("  injected IAM action detected as BLOCK", event["decision"], "BLOCK")
+assert_eq("  dangerous action reports drift detection",
+          event["model_inference"]["drift_source"], "danger_pattern")
+assert_eq("  LTL admin escalation property fired",
+          "P02" in event["ltl_violations"], True)
+assert_eq("  tool wrapper returns blocked result",
+          blocked_result.startswith("[SENTINEL BLOCKED]"), True)
+assert_eq("  IAM sandbox operation not executed", len(iam_calls), 0)
+
+# ── TEST 12: Stopping scripted runs preserves the active session ───────────────
+print("\nTest 12: Stopping a scripted run preserves session until it exits")
+active_session = session_mod.get_session()
+dashboard_server._demo_running = True
+try:
+    stop_response = dashboard_server.reset_session()
+finally:
+    dashboard_server._demo_running = False
+    dashboard_server._stop_requested.clear()
+assert_eq("  stop reports stopping", stop_response.body,
+          b'{"status":"stopping"}')
+assert_eq("  active session remains available",
+          session_mod.get_session() is active_session, True)
+assert_eq("  active session cancellation requested",
+          active_session.cancel_event.is_set(), True)
+
+# ── TEST 13: Cancelled scripted runs do not invoke tools ───────────────────────
+print("\nTest 13: Pre-cancelled scripted scenario executes no actions")
+dashboard_server._stop_requested.set()
+try:
+    with patch.object(dashboard_server.time, "sleep", return_value=None):
+        cancelled_summary = dashboard_server._run_scripted_scenario("normal_deploy")
+finally:
+    dashboard_server._stop_requested.clear()
+assert_eq("  scripted status is cancelled", cancelled_summary["status"], "cancelled")
+assert_eq("  no tool actions executed", cancelled_summary["total_actions"], 0)
+assert_eq("  all scripted actions listed as skipped",
+          cancelled_summary["skipped_actions"],
+          [tool_name for tool_name, _ in dashboard_server._SCENARIOS["normal_deploy"]])
 
 # ── RESULTS ───────────────────────────────────────────────────────────────────
 print("\n==============================================")

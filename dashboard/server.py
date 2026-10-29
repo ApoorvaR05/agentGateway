@@ -18,6 +18,17 @@ import threading
 import time
 from typing import Any
 
+# Keep numerical libraries within a predictable memory budget. Set these before
+# importing agent/SENTINEL modules, which may initialize NumPy or PyTorch.
+_thread_limit = os.getenv("SENTINEL_NUM_THREADS", "1")
+for _thread_env in (
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ[_thread_env] = _thread_limit
+
 # Ensure project root is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -27,7 +38,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import agent.sandbox as sb
 import agent.session as session_mod
-from agent.session import Session, set_session
+from agent.session import Session, SessionCancelled, set_session
 from sentinel import event_bus
 from sentinel.interceptor import Interceptor
 from sentinel import report_card as rc_mod
@@ -61,6 +72,7 @@ _app_loop: asyncio.AbstractEventLoop | None = None
 
 # ── Global "current demo session" state ───────────────────────────────────────
 _demo_running = False
+_stop_requested = threading.Event()
 
 
 @app.on_event("startup")
@@ -316,13 +328,21 @@ async def simulate_scenario(scenario: str) -> JSONResponse:
     global _demo_running
     if _demo_running:
         return JSONResponse({"status": "already_running"}, status_code=409)
+    if scenario not in _SCENARIOS:
+        return JSONResponse({"status": "error", "message": f"Unknown scenario: {scenario}"},
+                            status_code=404)
 
     _demo_running = True
+    _stop_requested.clear()
 
     def _run():
         global _demo_running
         try:
             _run_scripted_scenario(scenario)
+        except SessionCancelled:
+            _publish_cancelled_run()
+        except Exception as exc:
+            _publish_run_failure(exc)
         finally:
             _demo_running = False
 
@@ -337,7 +357,8 @@ async def run_llm_scenario(scenario: str) -> JSONResponse:
     Run a REAL LLM agent scenario through AXIOM-OPS + SENTINEL.
     Requires OPENAI_API_KEY or OLLAMA to be configured.
     The dashboard receives live events via WebSocket exactly as with /api/simulate.
-    Available scenarios: normal_deploy | health_monitor | prompt_injection |
+    Available scenarios: normal_deploy | health_monitor | intent_drift_demo |
+                        prompt_injection |
                          privilege_escalation | goal_drift | emergent_harm
     """
     global _demo_running
@@ -353,14 +374,24 @@ async def run_llm_scenario(scenario: str) -> JSONResponse:
         )
 
     _demo_running = True
+    _stop_requested.clear()
 
     def _run():
         global _demo_running
         try:
             from agent.axiom_ops import run_scenario
             run_scenario(scenario)
+        except SessionCancelled:
+            sess = session_mod._current_session
+            if sess is not None:
+                _sync_broadcast({
+                    "type": "session_end",
+                    "summary": sess.summary(),
+                    "output": "Agent run stopped by user.",
+                    "task_id": sess.task_id,
+                })
         except Exception as e:
-            _sync_broadcast({"type": "error", "message": str(e)[:200]})
+            _publish_run_failure(e)
         finally:
             _demo_running = False
 
@@ -557,14 +588,65 @@ def list_tools_endpoint() -> JSONResponse:
 
 @app.post("/api/reset")
 def reset_session() -> JSONResponse:
-    """Clear the current session and event bus."""
-    global _demo_running
-    _demo_running = False
+    """Request cancellation when active; otherwise clear session and event bus."""
+    if _demo_running:
+        _stop_requested.set()
+        sess = session_mod._current_session
+        if sess is not None:
+            sess.request_cancel()
+        return JSONResponse({"status": "stopping"}, status_code=202)
+
     event_bus.clear()
     event_bus.subscribe(_sync_broadcast)   # re-subscribe after clear
     session_mod._current_session = None
     Interceptor.reset()
     return JSONResponse({"status": "reset"})
+
+
+def _publish_cancelled_run() -> None:
+    sess = session_mod._current_session
+    if sess is None:
+        return
+    sess.set_status("cancelled")
+    summary = sess.summary()
+    if _DB_OK:
+        try:
+            db_store.update_task_status(sess.task_id, "cancelled", summary=summary)
+        except Exception:
+            pass
+    _sync_broadcast({
+        "type": "session_end",
+        "summary": summary,
+        "output": "Run stopped by user.",
+        "task_id": sess.task_id,
+    })
+
+
+def _publish_run_failure(exc: Exception) -> None:
+    """Publish a terminal failed-session event rather than leaving the UI running."""
+    sess = session_mod._current_session
+    message = str(exc).strip() or exc.__class__.__name__
+    if "unable to allocate CPU" in message or "failed to allocate buffer" in message:
+        message = (
+            "Ollama could not allocate memory to load the configured model. "
+            "Select a smaller Ollama model or free system memory, then retry. "
+            f"Details: {message}"
+        )
+    if sess is not None:
+        sess.set_status("failed")
+        summary = sess.summary()
+        if _DB_OK:
+            try:
+                db_store.update_task_status(sess.task_id, "failed", summary=summary)
+            except Exception:
+                pass
+        _sync_broadcast({
+            "type": "session_end",
+            "summary": summary,
+            "output": f"Run failed: {message}",
+            "task_id": sess.task_id,
+        })
+    _sync_broadcast({"type": "error", "message": message[:500]})
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
@@ -650,17 +732,23 @@ _TASK_LABELS = {
 }
 
 
-def _run_scripted_scenario(name: str) -> None:
-    """Execute a scripted action sequence through the full SENTINEL pipeline."""
+def _run_scripted_scenario(name: str) -> dict[str, Any] | None:
+    """Execute scripted actions through the same intercepted tools as the LLM."""
     actions = _SCENARIOS.get(name)
     if not actions:
         return
+
+    from agent.tools import ALL_TOOLS
+
+    tools_by_name = {tool.name: tool for tool in ALL_TOOLS}
 
     # Fresh session
     task = _TASK_LABELS.get(name, name)
     sess = Session(task=task, scenario=name)
     sess.set_status("running")
     set_session(sess)
+    if _stop_requested.is_set():
+        sess.request_cancel()
 
     # Persist task to DB
     if _DB_OK:
@@ -682,18 +770,60 @@ def _run_scripted_scenario(name: str) -> None:
         "task_id":    sess.task_id,
     })
 
-    for tool_name, args in actions:
+    blocked_action = None
+    skipped_actions: list[str] = []
+    for index, (tool_name, args) in enumerate(actions):
+        if _stop_requested.is_set():
+            sess.request_cancel()
+        if sess.cancel_event.is_set():
+            skipped_actions = [later_tool for later_tool, _ in actions[index:]]
+            break
         time.sleep(1.2)   # pace for visual effect on dashboard
-        decision = interceptor.evaluate(tool_name=tool_name, args=args)
-        # The interceptor publishes events to the bus (broadcast + persist via subscribers)
+        if _stop_requested.is_set():
+            sess.request_cancel()
+        if sess.cancel_event.is_set():
+            skipped_actions = [later_tool for later_tool, _ in actions[index:]]
+            break
+        tool = tools_by_name.get(tool_name)
+        if tool is None:
+            raise ValueError(f"Unknown scripted tool: {tool_name!r}")
+
+        previous_action_count = len(sess.actions)
+        tool.invoke(args)
+        if len(sess.actions) != previous_action_count + 1:
+            raise RuntimeError(
+                f"Scripted tool {tool_name!r} did not record exactly one SENTINEL decision"
+            )
+
+        record = sess.actions[-1]
+        if record.tool_name != tool_name:
+            raise RuntimeError(
+                f"Scripted tool {tool_name!r} recorded decision for {record.tool_name!r}"
+            )
+        sess.add_step(tool_name, args, record.decision)
+
+        if record.decision == "BLOCK":
+            blocked_action = tool_name
+            skipped_actions = [later_tool for later_tool, _ in actions[index + 1:]]
+            break
 
     # Determine final status
-    final_status = "completed"
-    if sess.blocked_count > 0 and sess.allowed_count == 0:
-        final_status = "blocked"
+    if _stop_requested.is_set():
+        sess.request_cancel()
+    final_status = (
+        "cancelled" if sess.cancel_event.is_set()
+        else "blocked" if blocked_action
+        else "completed"
+    )
     sess.set_status(final_status)
 
     summary = sess.summary()
+    summary.update({
+        "halted": blocked_action is not None or sess.cancel_event.is_set(),
+        "blocked_action": blocked_action,
+        "skipped_actions": skipped_actions,
+        "cancelled": sess.cancel_event.is_set(),
+    })
 
     # Persist final task state
     if _DB_OK:
@@ -708,6 +838,7 @@ def _run_scripted_scenario(name: str) -> None:
         "summary": summary,
         "task_id": sess.task_id,
     })
+    return summary
 
 
 # ── Serve the dashboard HTML ──────────────────────────────────────────────────

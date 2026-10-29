@@ -84,18 +84,29 @@ class IntentAnalyser:
 
     def score(self, task: str, tool_name: str, args: dict[str, Any],
               history: list) -> float:
+        return self.score_with_details(task, tool_name, args, history)["drift_score"]
+
+    def score_with_details(self, task: str, tool_name: str,
+                           args: dict[str, Any], history: list) -> dict[str, Any]:
         """
-        Return drift score 0.0–1.0 for the current tool call.
+        Return drift score and inference diagnostics for the current tool call.
         """
         # Build a textual representation of this action
         args_text = " ".join(str(v) for v in args.values())
         action_text = f"{tool_name} {args_text}"
+        details: dict[str, Any] = {
+            "sentence_transformer_available": self._encoder is not None,
+            "embedding_inference_performed": False,
+            "embedding_similarity": None,
+            "drift_source": "heuristic",
+        }
 
         # ── Hard override: dangerous keywords always dominate ─────────────────
         combined_text = (action_text + " " + task).lower()
         for pattern, score in _DANGER_PATTERNS:
             if re.search(pattern, combined_text, re.IGNORECASE):
-                return score
+                details.update({"drift_score": score, "drift_source": "danger_pattern"})
+                return details
 
         # ── Cosine drift (used only when clearly diverged) ───────────────────
         # sentence-transformers is noisy on short DevOps phrases — the model
@@ -105,27 +116,37 @@ class IntentAnalyser:
         # score above the WARN threshold (0.35) — only the heuristic keyword
         # checks + danger patterns can escalate to WARN or BLOCK.
         if self._encoder:
-            cosine    = self._cosine_drift(task, action_text)
+            similarity = self._cosine_similarity(task, action_text)
+            cosine = max(0.0, min(1.0, 1.0 - similarity))
             heuristic = self._heuristic_drift(task, tool_name, args, history)
             if cosine > 0.80:
                 # Blend: cosine provides a soft boost, hard-capped below warn
                 blended = max(cosine * 0.4, heuristic)
-                return min(blended, 0.34)
-            # Low cosine — rely purely on heuristic
-            return heuristic
+                drift = min(blended, 0.34)
+                source = "embedding_and_heuristic"
+            else:
+                # Low cosine — rely purely on heuristic
+                drift = heuristic
+                source = "heuristic"
+            details.update({
+                "embedding_inference_performed": True,
+                "embedding_similarity": round(similarity, 4),
+                "drift_source": source,
+                "drift_score": drift,
+            })
+            return details
 
         # ── Heuristic fallback ────────────────────────────────────────────────
-        return self._heuristic_drift(task, tool_name, args, history)
+        details["drift_score"] = self._heuristic_drift(task, tool_name, args, history)
+        return details
 
-    def _cosine_drift(self, task: str, action_text: str) -> float:
-        """1 - cosine_similarity(task_embed, action_embed)"""
+    def _cosine_similarity(self, task: str, action_text: str) -> float:
         from sentence_transformers import util
         if self._task_embedding is None:
             self._task_embedding = self._embed(task)
         action_emb = self._embed(action_text)
         similarity = float(util.cos_sim(self._task_embedding, action_emb)[0][0])
-        # Clamp to [0, 1]
-        return max(0.0, min(1.0, 1.0 - similarity))
+        return max(-1.0, min(1.0, similarity))
 
     def _heuristic_drift(self, task: str, tool_name: str,
                           args: dict, history: list) -> float:

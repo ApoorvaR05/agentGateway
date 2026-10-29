@@ -16,6 +16,7 @@ Falls back to rule-only if the model file is not found.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -23,9 +24,12 @@ from typing import Any
 from sentinel.analysers.pfa import STATE_RISK, TIER3_TOOLS, TIER2_TOOLS
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-_ROOT        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 _MODEL_FILE  = os.path.join(_ROOT, "models", "risk_classifier.json")
 _FEATS_FILE  = os.path.join(_ROOT, "models", "feature_names.json")
+_logger = logging.getLogger(__name__)
 
 # ── Feature weights for Security sub-score ────────────────────────────────────
 _SEC_FEATURES = {
@@ -82,22 +86,27 @@ class RiskScorer:
 
     def __init__(self):
         self._xgb_model = None
+        self._xgb_status = "unavailable"
         self._load_xgb()
 
     def _load_xgb(self) -> None:
-        """Load the trained XGBoost model (silent fail → rule-only fallback)."""
+        """Load the trained XGBoost model, logging failures before fallback."""
+        if not os.path.exists(_MODEL_FILE):
+            return
         try:
             import xgboost as xgb
-            if os.path.exists(_MODEL_FILE):
-                self._xgb_model = xgb.XGBClassifier()
-                self._xgb_model.load_model(_MODEL_FILE)
+            self._xgb_model = xgb.Booster()
+            self._xgb_model.load_model(_MODEL_FILE)
+            self._xgb_status = "loaded"
         except Exception:
+            _logger.exception("Could not load XGBoost risk model from %s", _MODEL_FILE)
             self._xgb_model = None
+            self._xgb_status = "load_failed"
 
     def score(self, tool_name: str, args: dict[str, Any],
               drift_score: float, pfa_state: str,
               ltl_violations: list, history: list,
-              monitoring_level: str) -> dict[str, float]:
+              monitoring_level: str) -> dict[str, Any]:
 
         args_str   = " ".join(str(v) for v in args.values()).lower()
         prev_tools = [r.tool_name for r in history[-5:]] if history else []
@@ -119,9 +128,10 @@ class RiskScorer:
         rule_overall = max(rule_overall, state_floor)
 
         # ── 2. XGBoost sequence-level probability ─────────────────────────────
-        xgb_prob = self._xgb_score(
+        xgb_score, xgb_status = self._xgb_score(
             tool_name, args_str, drift_score, history, sec, saf, prev_tools
         )
+        xgb_prob = xgb_score if xgb_score is not None else 0.0
 
         # ── 3. Ensemble blend ─────────────────────────────────────────────────
         # XGBoost contributes only when rule-based scores are already elevated
@@ -140,6 +150,12 @@ class RiskScorer:
             "reliability": round(rel,      3),
             "overall":     round(overall,  3),
             "xgb_prob":    round(xgb_prob, 3),
+            "xgb_model_available": self._xgb_model is not None,
+            "xgb_inference_performed": xgb_status == "inferred",
+            "xgb_status": xgb_status,
+            "xgb_model_risk_score": (
+                round(xgb_score, 3) if xgb_score is not None else None
+            ),
         }
 
     # ── Rule scorer helpers ───────────────────────────────────────────────────
@@ -206,13 +222,14 @@ class RiskScorer:
 
     def _xgb_score(self, tool_name: str, args_str: str, drift_score: float,
                    history: list, sec: float, saf: float,
-                   prev_tools: list) -> float:
+                   prev_tools: list) -> tuple[float | None, str]:
         """Extract session-level features and return XGBoost adversarial probability."""
         if self._xgb_model is None:
-            return 0.0
+            return None, self._xgb_status
 
         try:
             import numpy as np
+            import xgboost as xgb
 
             total    = max(len(history) + 1, 1)
             all_tools = [r.tool_name for r in history] + [tool_name]
@@ -277,8 +294,9 @@ class RiskScorer:
             }
 
             X = np.array([[row[f] for f in _XGB_FEATURE_NAMES]], dtype=np.float32)
-            prob = float(self._xgb_model.predict_proba(X)[0][1])
-            return min(prob, 1.0)
+            prob = float(self._xgb_model.predict(xgb.DMatrix(X))[0])
+            return max(0.0, min(prob, 1.0)), "inferred"
 
         except Exception:
-            return 0.0
+            _logger.exception("XGBoost risk inference failed for tool %s", tool_name)
+            return None, "failed"

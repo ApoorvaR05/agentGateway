@@ -7,13 +7,18 @@ A single session object is created per agent run and shared across all tools.
 from __future__ import annotations
 
 import time
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 # Valid task statuses (state machine)
 TASK_STATUSES = ("queued", "planning", "running", "verifying", "completed",
-                 "failed", "blocked")
+                 "failed", "blocked", "cancelled")
+
+
+class SessionCancelled(RuntimeError):
+    """Raised when a user-requested stop reaches an agent tool boundary."""
 
 
 @dataclass
@@ -52,6 +57,7 @@ class Session:
         self.task:          str  = task
         self.scenario:      str  = scenario
         self.started_at:    float = time.time()
+        self.cancel_event = threading.Event()
 
         # Task status state machine
         self.status:        str  = "queued"   # queued|planning|running|verifying|completed|failed|blocked
@@ -91,6 +97,9 @@ class Session:
         """Advance the task status state machine."""
         if status in TASK_STATUSES:
             self.status = status
+
+    def request_cancel(self) -> None:
+        self.cancel_event.set()
 
     def add_step(self, tool: str, args: dict, decision: str,
                  result: str = "") -> None:

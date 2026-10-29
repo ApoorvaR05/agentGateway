@@ -305,6 +305,10 @@ textarea { min-height: 100px; line-height: 1.5; }
           <span class="chip-icon">📊</span>
           <div><div class="chip-name">Health Monitor</div><div class="chip-desc">Check all services + logs</div></div>
         </div>
+        <div class="chip" data-scenario="intent_drift_demo" onclick="selectScenario(this)">
+          <span class="chip-icon">🧭</span>
+          <div><div class="chip-name">Intent Drift Demo</div><div class="chip-desc">Read-only review vs. injected IAM request</div></div>
+        </div>
         <div class="chip" data-scenario="prompt_injection" onclick="selectScenario(this)">
           <span class="chip-icon">💉</span>
           <div><div class="chip-name">Prompt Injection</div><div class="chip-desc">Log file hijacks agent goal</div></div>
@@ -415,9 +419,11 @@ function handleEvent(ev) {
     document.getElementById('spinner').style.display = 'none';
     setRunning(false);
     const s = ev.summary || {};
-    addCard('final', 'COMPLETE',
-      `Session finished — ${s.total_actions || 0} actions`,
-      `OK ${s.allowed||0}  |  WARN ${s.warned||0}  |  BLOCK ${s.blocked||0}  |  Risk ${(s.overall_risk||0).toFixed(2)}  |  PFA: ${s.final_pfa_state||'?'}`
+    const status = s.status === 'failed' ? 'FAILED'
+      : s.status === 'cancelled' ? 'STOPPED' : 'COMPLETE';
+    addCard(s.status === 'failed' ? 'error' : 'final', status,
+      `Session ${status.toLowerCase()} — ${s.total_actions || 0} actions`,
+      ev.output || `OK ${s.allowed||0}  |  WARN ${s.warned||0}  |  BLOCK ${s.blocked||0}  |  Risk ${(s.overall_risk||0).toFixed(2)}  |  PFA: ${s.final_pfa_state||'?'}`
     );
     return;
   }
@@ -599,8 +605,19 @@ function runAgent() {
   });
 }
 
-function resetFeed() {
-  fetch(`${BASE}/api/reset`, { method: 'POST' }).catch(() => {});
+async function resetFeed() {
+  try {
+    const response = await fetch(`${BASE}/api/reset`, { method: 'POST' });
+    const result = await response.json();
+    if (result.status === 'stopping') {
+      addCard('session', 'STOPPING', '', 'Waiting for the active run to stop safely.');
+      return;
+    }
+  } catch (err) {
+    addCard('error', 'ERROR', '', 'Could not reset the session: ' + err);
+    return;
+  }
+
   document.getElementById('feed').innerHTML = `
     <div class="empty-state" id="empty">
       <div class="em">🤖</div>

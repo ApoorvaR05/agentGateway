@@ -13,6 +13,8 @@ This module is intentionally kept thin — each subsystem lives in its own file.
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 import uuid
 from typing import Any
@@ -29,6 +31,8 @@ from sentinel import report_card as rc_mod
 from sentinel import least_privilege as lp_mod
 from sentinel import merkle_audit as merkle_mod
 from sentinel import rl_tuner as rl_mod
+
+_logger = logging.getLogger(__name__)
 
 
 class Interceptor:
@@ -75,12 +79,13 @@ class Interceptor:
         t0   = time.time()
 
         # ── 1. Intent drift analysis ─────────────────────────────────────────
-        drift_score = self.intent_analyser.score(
+        intent_analysis = self.intent_analyser.score_with_details(
             task=sess.task,
             tool_name=tool_name,
             args=args,
             history=sess.actions,
         )
+        drift_score = intent_analysis["drift_score"]
 
         # ── 2. PFA state transition + LTL check ──────────────────────────────
         pfa_result = self.pfa_engine.transition(
@@ -214,6 +219,19 @@ class Interceptor:
             "args":        {k: str(v)[:100] for k, v in args.items()},
             "decision":    action,
             "scores":      risk_scores,
+            "model_inference": {
+                "sentence_transformer_available":
+                    intent_analysis["sentence_transformer_available"],
+                "embedding_inference_performed":
+                    intent_analysis["embedding_inference_performed"],
+                "embedding_similarity": intent_analysis["embedding_similarity"],
+                "drift_source": intent_analysis["drift_source"],
+                "drift_score": round(drift_score, 3),
+                "xgboost_available": scores["xgb_model_available"],
+                "xgboost_inference_performed": scores["xgb_inference_performed"],
+                "xgboost_status": scores["xgb_status"],
+                "model_generated_risk_score": scores["xgb_model_risk_score"],
+            },
             "pfa_state":   pfa_result["new_state"],
             "drift":       round(drift_score, 3),
             "ltl_violations": [v["property"] for v in ltl_violations],
@@ -259,6 +277,25 @@ class Interceptor:
                 pass
 
         # ── 13. Publish event to bus ──────────────────────────────────────────
+        _logger.info(
+            "SENTINEL_ACTION %s",
+            json.dumps({
+                "seq": seq,
+                "tool": tool_name,
+                "sentence_transformer_available":
+                    intent_analysis["sentence_transformer_available"],
+                "embedding_inference_performed":
+                    intent_analysis["embedding_inference_performed"],
+                "embedding_similarity": intent_analysis["embedding_similarity"],
+                "drift_score": round(drift_score, 3),
+                "drift_source": intent_analysis["drift_source"],
+                "xgboost_available": scores["xgb_model_available"],
+                "xgboost_inference_performed": scores["xgb_inference_performed"],
+                "xgboost_status": scores["xgb_status"],
+                "model_generated_risk_score": scores["xgb_model_risk_score"],
+                "final_decision": action,
+            }, sort_keys=True),
+        )
         event_bus.publish(event)
 
         return {
